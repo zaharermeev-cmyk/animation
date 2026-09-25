@@ -82,6 +82,7 @@
     reset() {
       this.scaredAt = null;
       this.cycleIdx = -1;
+      this.cycleLen = null;
       this._planKey = null;
     }
 
@@ -591,15 +592,23 @@
       c.fillStyle = this.fill;
 
       const rev = ease(t / 1.6); // материализация
-      let p = this.plan();
-      const cycleLen = p.end + 0.6; // если повтор фона выключен — сцена крутится сама
-      const idx = t < 1.6 ? -1 : Math.floor((t - 1.6) / cycleLen);
+      // Длину цикла фиксируем в его начале: если лису спугнули, план укорачивается,
+      // и без этого время «перескакивало» бы в новый цикл, а лиса появлялась снова.
+      // Когда фон повторяется сам (bg.opts.loop), сцена не зацикливается — после
+      // бегства лисы начинается финал фона, и всё запускается заново.
+      if (this.cycleIdx < 0 || this.cycleLen == null) {
+        this.scaredAt = null;
+        this.cycleLen = this.plan().end + 0.6;
+      }
+      const loops = !(bg.opts.loop && this.enabled);
+      const idx = t < 1.6 ? -1 : loops ? Math.floor((t - 1.6) / this.cycleLen) : 0;
       if (idx !== this.cycleIdx) {
         this.cycleIdx = idx;
         this.scaredAt = null;
-        p = this.plan();
+        this.cycleLen = this.plan().end + 0.6;
       }
-      const tl = t < 1.6 ? -1 : (t - 1.6) % cycleLen; // время внутри цикла
+      const p = this.plan();
+      const tl = t < 1.6 ? -1 : loops ? (t - 1.6) % this.cycleLen : t - 1.6; // время внутри цикла
 
       // ---- удары кирки ----
       let swing = rad(-25), lean = 0, strikeAge = 99;

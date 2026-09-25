@@ -518,6 +518,6 @@ class VeilBackground {
 }
 
 // доступно как обычный <script>: window.VeilBackground
-VeilBackground.VERSION = '19 — окно входа по умолчанию, лиса разлетается из логотипа';
+VeilBackground.VERSION = '20 — испуг лисы завершает сцену';
 window.VeilBackground = VeilBackground;
 window.VEIL_DEFAULTS = DEFAULTS;
