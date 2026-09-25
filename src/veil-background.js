@@ -15,7 +15,7 @@ const lerp = (a, b, t) => a + (b - a) * t;
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const smooth = (t) => t * t * (3 - 2 * t);
 
-export const DEFAULTS = {
+const DEFAULTS = {
   // вуали
   ribbons: 7, // пучков волокон с каждой стороны
   strandsPerRibbon: 22,
@@ -26,7 +26,7 @@ export const DEFAULTS = {
   bloom: 1,
   strandOpacity: 1,
   // сетка
-  cell: 0.5, // размер плитки
+  cell: 0.17, // размер плитки
   span: 44, // размер поля в мировых единицах
   hills: 0, // высота волн (0 — ровный пол)
   pit: 0, // глубина провала в центре (0 — без провала)
@@ -75,7 +75,7 @@ const rgba = (c, a = 1) =>
   `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${clamp(c[3] * a, 0, 1).toFixed(4)})`;
 const mixColor = (a, b, t) => [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t), lerp(a[3], b[3], t)];
 
-export class VeilBackground {
+class VeilBackground {
   constructor(canvas, options = {}) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
@@ -89,6 +89,8 @@ export class VeilBackground {
     [this.layer, this.lctx] = mk(); // волокна
     [this.bloomCanvas, this.bctx] = mk(); // свечение
     [this.smokeCanvas, this.sctx] = mk(); // дым (низкое разрешение)
+    [this.floorCanvas, this.fctx] = mk(); // пол
+    [this.flashCanvas, this.flctx] = mk(); // вспышка фронта проявления
 
     this.time = 0;
     this.clock = 0;
@@ -314,7 +316,7 @@ export class VeilBackground {
     this.W = this.canvas.clientWidth || innerWidth;
     this.H = this.canvas.clientHeight || innerHeight;
     this.dpr = dpr;
-    for (const c of [this.canvas, this.layer]) {
+    for (const c of [this.canvas, this.layer, this.floorCanvas, this.flashCanvas]) {
       c.width = Math.round(this.W * dpr);
       c.height = Math.round(this.H * dpr);
     }
@@ -419,12 +421,136 @@ export class VeilBackground {
     ctx.clearRect(0, 0, W, H);
 
     const p = this.gridReveal();
-    this.drawGrid(pal, p);
+    if (this.opts.hills || this.opts.pit) this.drawGrid(pal, p);
+    else this.drawFloor(pal, p);
     this.drawShadows(pal, p);
     this.drawSmoke(pal);
     this.drawFibers(pal);
     this.drawGlints(pal, dt);
     this.updateObjects(p);
+  }
+
+  /** Мировая точка → координаты камеры [xc, yc, zc]. */
+  toCam(x, y, z) {
+    const { cam } = this;
+    const dx = x - cam.eye[0], dy = y - cam.eye[1], dz = z - cam.eye[2];
+    return [
+      dx * cam.r[0] + dy * cam.r[1] + dz * cam.r[2],
+      dx * cam.u[0] + dy * cam.u[1] + dz * cam.u[2],
+      dx * cam.f[0] + dy * cam.f[1] + dz * cam.f[2],
+    ];
+  }
+
+  /**
+   * Ровный пол: каждая линия сетки — прямая, поэтому рисуем её одним отрезком,
+   * а затухание вдали и проявление в интро накладываем масками.
+   */
+  drawFloor(pal, p) {
+    if (p <= 0) return;
+    const { opts, W, H, cam, dpr } = this;
+    const { span, cell } = opts;
+    const f = this.fctx;
+    const intro = p < 1.3;
+
+    // пол неподвижен: если камера, цвет и размер не менялись — берём готовый кадр
+    const key = [cam.eye[0].toFixed(3), cam.eye[1].toFixed(3), rgba(pal.grid), W, H, span, cell, opts.angle, opts.fade, opts.gridOpacity].join('|');
+    if (!intro && key === this.floorKey) {
+      this.ctx.save();
+      this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+      this.ctx.drawImage(this.floorCanvas, 0, 0);
+      this.ctx.restore();
+      return;
+    }
+    this.floorKey = intro ? null : key;
+    const ang = (opts.angle * Math.PI) / 180;
+    const ca = Math.cos(ang), sa = Math.sin(ang);
+    const zOff = span * 0.3;
+    const L = span / 2;
+    const NEAR = 0.3;
+    const sx = (c) => W / 2 + (c[0] / c[2]) * cam.F;
+    const sy = (c) => H / 2 - (c[1] / c[2]) * cam.F;
+
+    f.setTransform(dpr, 0, 0, dpr, 0, 0);
+    f.globalCompositeOperation = 'source-over';
+    f.clearRect(0, 0, W, H);
+    f.beginPath();
+    const n = Math.round(span / cell);
+    for (const dir of [0, 1]) {
+      for (let k = 0; k <= n; k++) {
+        const u = -L + k * cell;
+        const [a0, b0, a1, b1] = dir ? [u, -L, u, L] : [-L, u, L, u];
+        let c0 = this.toCam(a0 * ca - b0 * sa, 0, a0 * sa + b0 * ca + zOff);
+        let c1 = this.toCam(a1 * ca - b1 * sa, 0, a1 * sa + b1 * ca + zOff);
+        if (c0[2] < NEAR && c1[2] < NEAR) continue;
+        // отсекаем часть линии за камерой
+        if (c0[2] < NEAR || c1[2] < NEAR) {
+          const t = (NEAR - c0[2]) / (c1[2] - c0[2]);
+          const cut = [lerp(c0[0], c1[0], t), lerp(c0[1], c1[1], t), NEAR];
+          if (c0[2] < NEAR) c0 = cut;
+          else c1 = cut;
+        }
+        f.moveTo(sx(c0), sy(c0));
+        f.lineTo(sx(c1), sy(c1));
+      }
+    }
+    f.lineWidth = 0.6;
+    f.strokeStyle = rgba(pal.grid, opts.gridOpacity);
+    f.stroke();
+
+    // затухание вдали: вертикальный градиент по глубине
+    const stops = [];
+    for (let z = -12; z <= span; z += 0.5) {
+      const c = this.toCam(cam.eye[0], 0, z);
+      if (c[2] < NEAR) continue;
+      const d = 1 - opts.fade * clamp((c[2] - 5) / 17, 0, 1);
+      stops.push([clamp(sy(c) / H, 0, 1), d * d]);
+    }
+    stops.sort((a, b) => a[0] - b[0]);
+    const g = f.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, 'rgba(0,0,0,0)');
+    for (const [o, a] of stops) g.addColorStop(o, `rgba(0,0,0,${a.toFixed(3)})`);
+    f.globalCompositeOperation = 'destination-in';
+    f.fillStyle = g;
+    f.fillRect(0, 0, W, H);
+
+    const ctx = this.ctx;
+    if (intro) {
+      // «эллиптические» координаты: r = 0 в центре, r = 1 в углу экрана
+      const ellipse = (c) =>
+        c.setTransform((dpr * W) / 2 * Math.SQRT2, 0, 0, (dpr * H) / 2 * Math.SQRT2, (dpr * W) / 2, (dpr * H) / 2);
+      const R = 1.5, STEPS = 60;
+      const disc = f.createRadialGradient(0, 0, 0, 0, 0, R);
+      const ring = f.createRadialGradient(0, 0, 0, 0, 0, R);
+      for (let i = 0; i <= STEPS; i++) {
+        const r = (i / STEPS) * R;
+        disc.addColorStop(i / STEPS, `rgba(0,0,0,${clamp((p - r) / 0.16, 0, 1).toFixed(3)})`);
+        ring.addColorStop(i / STEPS, `rgba(0,0,0,${clamp(Math.exp(-(((p - r) / 0.045) ** 2)), 0, 1).toFixed(3)})`);
+      }
+      const fl = this.flctx;
+      fl.setTransform(1, 0, 0, 1, 0, 0);
+      fl.globalCompositeOperation = 'source-over';
+      fl.clearRect(0, 0, this.flashCanvas.width, this.flashCanvas.height);
+      fl.drawImage(this.floorCanvas, 0, 0);
+      fl.globalCompositeOperation = 'destination-in';
+      ellipse(fl);
+      fl.fillStyle = ring;
+      fl.fillRect(-5, -5, 10, 10);
+
+      ellipse(f);
+      f.fillStyle = disc;
+      f.fillRect(-5, -5, 10, 10);
+    }
+
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.drawImage(this.floorCanvas, 0, 0);
+    if (intro) {
+      ctx.globalCompositeOperation = pal.additive ? 'lighter' : 'source-over';
+      ctx.drawImage(this.flashCanvas, 0, 0);
+      ctx.globalAlpha = 0.8;
+      ctx.drawImage(this.flashCanvas, 0, 0);
+    }
+    ctx.restore();
   }
 
   drawGrid(pal, p) {
@@ -771,3 +897,7 @@ export class VeilBackground {
     }
   }
 }
+
+// доступно как обычный <script>: window.VeilBackground
+window.VeilBackground = VeilBackground;
+window.VEIL_DEFAULTS = DEFAULTS;

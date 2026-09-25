@@ -2,7 +2,20 @@
 
 Анимированный фон по референсу: ровный пол из ромбовидных плиток, уходящий в темноту, вуали из дымчатого шёлка и пучков волокон с огоньками на кончиках, свободные завитки и искры. Есть светлая и тёмная темы.
 
-Запуск: `python3 -m http.server` → http://localhost:8000
+## Как посмотреть
+
+**Онлайн (GitHub Pages):** https://zaharermeev-cmyk.github.io/animation/
+(включается один раз: Settings → Pages → Source: Deploy from a branch → ветка `claude/privet-ehowzu`, папка `/ (root)` → Save).
+
+**На компьютере:** Code → Download ZIP → распаковать → открыть `index.html` двойным кликом. Сервер не нужен.
+
+## Подключение на свой сайт
+```html
+<link rel="stylesheet" href="src/veil.css">
+<canvas class="veil-canvas" id="veil"></canvas>
+<script src="src/veil-background.js"></script>
+<script>new VeilBackground(document.getElementById('veil')).start();</script>
+```
 
 ## Интро
 Пустой экран → от центра материализуются плитки (со светящимся фронтом) → из центра вырастают вуали → появляются искры.
