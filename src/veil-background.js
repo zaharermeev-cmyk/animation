@@ -17,10 +17,11 @@ const smooth = (t) => t * t * (3 - 2 * t);
 
 const DEFAULTS = {
   // вуали
-  ribbons: 7, // пучков волокон с каждой стороны
-  strandsPerRibbon: 22,
+  water: 5, // водяных лент с каждой стороны
+  ribbons: 5, // пучков волокон с каждой стороны
+  strandsPerRibbon: 9,
   smoke: 5, // дымчатых полос с каждой стороны
-  loose: 28, // свободных завитков
+  loose: 18, // свободных завитков
   points: 64,
   glints: 70,
   bloom: 1,
@@ -90,6 +91,7 @@ class VeilBackground {
     [this.bloomCanvas, this.bctx] = mk(); // свечение
     [this.smokeCanvas, this.sctx] = mk(); // дым (низкое разрешение)
     [this.floorCanvas, this.fctx] = mk(); // пол
+    [this.waterCanvas, this.wctx] = mk(); // вода (половинное разрешение)
     [this.flashCanvas, this.flctx] = mk(); // вспышка фронта проявления
 
     this.time = 0;
@@ -193,6 +195,9 @@ class VeilBackground {
       a: parseColor(v('--veil-a'), [226, 190, 130, 1]),
       b: parseColor(v('--veil-b'), [170, 200, 245, 1]),
       smoke: parseColor(v('--veil-smoke'), [150, 180, 230, 1]),
+      water: parseColor(v('--veil-water'), [30, 60, 120, 0.35]),
+      waterEdge: parseColor(v('--veil-water-edge'), [160, 200, 255, 1]),
+      waterHi: parseColor(v('--veil-water-hi'), [235, 245, 255, 1]),
       grid: parseColor(v('--veil-grid'), [215, 190, 145, 0.4]),
       glint: parseColor(v('--veil-glint'), [255, 240, 210, 1]),
       shadow: parseColor(v('--veil-shadow'), [120, 150, 220, 0.25]),
@@ -208,7 +213,7 @@ class VeilBackground {
     const { from, to } = tr;
     const dip = from.additive !== to.additive ? 1 - 0.85 * Math.sin(Math.PI * t) : 1;
     const out = { additive: t < 0.5 ? from.additive : to.additive, intensity: lerp(from.intensity, to.intensity, t) * dip };
-    for (const k of ['a', 'b', 'smoke', 'grid', 'glint', 'shadow']) out[k] = mixColor(from[k], to[k], t);
+    for (const k of ['a', 'b', 'smoke', 'water', 'waterEdge', 'waterHi', 'grid', 'glint', 'shadow']) out[k] = mixColor(from[k], to[k], t);
     return out;
   }
 
@@ -221,6 +226,7 @@ class VeilBackground {
     this.strands = [];
     this.ribbons = [];
     this.smokes = [];
+    this.waters = [];
     this.loose = [];
 
     for (const side of [-1, 1]) {
@@ -259,6 +265,27 @@ class VeilBackground {
             pts: new Float32Array(o.points * 2),
           });
         }
+      }
+      // водяные ленты
+      for (let i = 0; i < o.water; i++) {
+        this.waters.push({
+          side,
+          y0: lerp(0.2, 0.82, (i + 0.5) / o.water) + r(-0.06, 0.06),
+          yEnd: 0.5 + r(-0.07, 0.07),
+          xEnd: r(0.02, 0.1),
+          amp: r(0.05, 0.12),
+          freq: r(0.7, 1.5),
+          width: r(0.05, 0.1),
+          twist: r(0.7, 1.6),
+          speed: r(0.09, 0.17),
+          phase: r(0, TAU),
+          alpha: r(0.6, 1),
+          delay: Math.abs(i - (o.water - 1) / 2) * 0.12 + r(0, 0.2),
+          x: new Float32Array(48),
+          yc: new Float32Array(48),
+          hw: new Float32Array(48),
+          reveal: 0,
+        });
       }
       // дымчатые полосы
       for (let i = 0; i < o.smoke; i++) {
@@ -322,6 +349,8 @@ class VeilBackground {
     }
     this.bloomCanvas.width = Math.round(this.W / 4);
     this.bloomCanvas.height = Math.round(this.H / 4);
+    this.waterCanvas.width = Math.round(this.W / 2);
+    this.waterCanvas.height = Math.round(this.H / 2);
     this.smokeCanvas.width = Math.round(this.W / 4);
     this.smokeCanvas.height = Math.round(this.H / 4);
   }
@@ -425,6 +454,8 @@ class VeilBackground {
     else this.drawFloor(pal, p);
     this.drawShadows(pal, p);
     this.drawSmoke(pal);
+    this.computeWater();
+    this.drawWaterBody(pal);
     this.drawFibers(pal);
     this.drawGlints(pal, dt);
     this.updateObjects(p);
@@ -705,6 +736,131 @@ class VeilBackground {
     ctx.restore();
   }
 
+  /* ---------- водяные ленты ---------- */
+
+  computeWater() {
+    const { H } = this;
+    for (const w of this.waters) {
+      w.reveal = this.veilReveal(w.delay);
+      if (w.reveal <= 0) continue;
+      const n = w.x.length;
+      for (let i = 0; i < n; i++) {
+        const t = i / (n - 1);
+        const [x, yc, e, tt] = this.flow(w.side, t, w.y0, w.yEnd, w.xEnd, w.amp, w.freq, w.speed, w.phase);
+        // лента перекручивается: знак fold меняет местами верхний и нижний край
+        const fold = Math.cos(t * w.twist * Math.PI + tt * 1.1 + w.phase);
+        const half = H * w.width * (0.2 + 0.9 * e) * (0.75 + 0.25 * Math.sin(t * 5 + tt * 1.7 + w.phase));
+        w.x[i] = x;
+        w.yc[i] = yc;
+        w.hw[i] = half * (Math.abs(fold) < 0.08 ? Math.sign(fold || 1) * 0.08 : fold);
+      }
+    }
+  }
+
+  /** Градиент вдоль ленты: форма, проявление и яркость там, где лента повёрнута ребром. */
+  waterGradient(c, w, color, a, edgeBoost = 0) {
+    const { W } = this;
+    const xOuter = w.side < 0 ? -0.06 * W : 1.06 * W;
+    const fx = W / 2 + w.side * w.xEnd * W;
+    const g = c.createLinearGradient(xOuter, 0, fx, 0);
+    const n = w.x.length, STOPS = 16, H = this.H;
+    for (let k = 0; k < STOPS; k++) {
+      const t = k / (STOPS - 1);
+      const i = Math.round(t * (n - 1));
+      const prof = t < 0.2 ? t / 0.2 : t < 0.86 ? 1 : (1 - t) / 0.14;
+      const flat = Math.abs(w.hw[i]) / (H * w.width + 1e-6); // 0 — ребром, 1 — плашмя
+      const boost = 1 + edgeBoost * Math.pow(1 - clamp(flat, 0, 1), 3);
+      g.addColorStop(t, rgba(color, a * prof * boost * this.maskAt(w.reveal, t)));
+    }
+    return g;
+  }
+
+  /** Полоса ленты между долями ширины k0..k1 (-0.5 — один край, 0.5 — другой). */
+  bandPath(c, w, k0, k1) {
+    const n = w.x.length;
+    c.beginPath();
+    c.moveTo(w.x[0], w.yc[0] + k0 * 2 * w.hw[0]);
+    for (let i = 1; i < n; i++) c.lineTo(w.x[i], w.yc[i] + k0 * 2 * w.hw[i]);
+    for (let i = n - 1; i >= 0; i--) c.lineTo(w.x[i], w.yc[i] + k1 * 2 * w.hw[i]);
+    c.closePath();
+  }
+
+  edgePath(c, w, k, wobble = 0) {
+    const n = w.x.length;
+    const tt = this.time;
+    c.beginPath();
+    for (let i = 0; i < n; i++) {
+      const off = wobble * Math.sin(i * 0.35 + tt * 1.3 + w.phase * 3 + k * 7) * Math.abs(w.hw[i]) * 0.3;
+      const y = w.yc[i] + k * 2 * w.hw[i] + off;
+      i ? c.lineTo(w.x[i], y) : c.moveTo(w.x[i], y);
+    }
+  }
+
+  /** Толща воды: полупрозрачное тело ленты, слегка тонирующее сетку под ней. */
+  drawWaterBody(pal) {
+    const { ctx } = this;
+    ctx.save();
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.filter = `blur(${Math.round(5 * this.dpr)}px)`;
+    for (const w of this.waters) {
+      if (w.reveal <= 0) continue;
+      this.bandPath(ctx, w, -0.5, 0.5);
+      ctx.fillStyle = this.waterGradient(ctx, w, pal.water, w.alpha * pal.intensity);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  /** Свет в воде: края ярче середины, блики по краям и внутри ленты. */
+  drawWaterLight(c, pal) {
+    const BANDS = 10;
+    const wc = this.wctx;
+    const k = this.waterCanvas.width / this.W;
+    wc.setTransform(1, 0, 0, 1, 0, 0);
+    wc.globalCompositeOperation = 'source-over';
+    wc.clearRect(0, 0, this.waterCanvas.width, this.waterCanvas.height);
+    wc.setTransform(k, 0, 0, k, 0, 0);
+    wc.globalCompositeOperation = pal.additive ? 'lighter' : 'source-over';
+    // объём: полосы по ширине, у краёв ярче (как свет в толще воды)
+    for (const w of this.waters) {
+      if (w.reveal <= 0) continue;
+      const a = w.alpha * pal.intensity * (pal.additive ? 1 : 0.8);
+      for (let b = 0; b < BANDS; b++) {
+        const k0 = b / BANDS - 0.5, k1 = (b + 1) / BANDS - 0.5;
+        const m = Math.abs(k0 + k1);
+        const fres = 0.06 + 0.32 * Math.pow(m, 2.2);
+        this.bandPath(wc, w, k0, k1);
+        wc.fillStyle = this.waterGradient(wc, w, pal.waterEdge, a * fres, 1.5);
+        wc.fill();
+      }
+    }
+    c.save();
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.filter = `blur(${Math.round(4 * this.dpr)}px)`;
+    c.drawImage(this.waterCanvas, 0, 0, this.layer.width, this.layer.height);
+    c.filter = 'none';
+    c.restore();
+
+    for (const w of this.waters) {
+      if (w.reveal <= 0) continue;
+      const a = w.alpha * pal.intensity * (pal.additive ? 1 : 0.8);
+      // блики по краям
+      c.lineWidth = 1.1;
+      for (const k of [-0.5, 0.5]) {
+        this.edgePath(c, w, k);
+        c.strokeStyle = this.waterGradient(c, w, pal.waterHi, a * 0.32, 1.2);
+        c.stroke();
+      }
+      // внутренние блики, как отражения на воде
+      c.lineWidth = 0.7;
+      for (const k of [-0.28, 0.06, 0.3]) {
+        this.edgePath(c, w, k, 1);
+        c.strokeStyle = this.waterGradient(c, w, pal.waterHi, a * 0.14, 2);
+        c.stroke();
+      }
+    }
+  }
+
   computeStrand(s) {
     const { H } = this;
     const rb = s.ribbon;
@@ -726,7 +882,7 @@ class VeilBackground {
     const n = opts.points;
     const base = (pal.additive ? 0.45 : 0.36) * pal.intensity * opts.strandOpacity;
 
-    let any = false;
+    let any = this.waters.some((w) => w.reveal > 0);
     for (const rb of this.ribbons) {
       rb.reveal = this.veilReveal(rb.delay);
       if (rb.reveal > 0) any = true;
@@ -739,6 +895,8 @@ class VeilBackground {
     c.globalCompositeOperation = pal.additive ? 'lighter' : 'source-over';
     c.lineCap = 'round';
     c.lineJoin = 'round';
+
+    this.drawWaterLight(c, pal);
 
     // пучки волокон
     for (const s of this.strands) {

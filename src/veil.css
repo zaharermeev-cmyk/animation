@@ -7,6 +7,9 @@
   --veil-a: #9a6420; /* золотые волокна */
   --veil-b: #2d4f96; /* голубые волокна */
   --veil-smoke: #7f97c4; /* дымчатый шёлк */
+  --veil-water: rgba(70, 120, 200, 0.14); /* толща воды */
+  --veil-water-edge: #3f73c8; /* края водяных лент */
+  --veil-water-hi: #1f4f9e; /* блики */
   --veil-grid: rgba(120, 90, 45, 0.3); /* линии плиток */
   --veil-glint: #c9861f;
   --veil-shadow: rgba(20, 30, 60, 0.28); /* тень под объектами */
@@ -22,6 +25,9 @@
   --veil-a: #e3be82;
   --veil-b: #b4cdf2;
   --veil-smoke: #7e9fd6;
+  --veil-water: rgba(24, 50, 100, 0.38);
+  --veil-water-edge: #9dbcf2;
+  --veil-water-hi: #e6f1ff;
   --veil-grid: rgba(222, 196, 150, 0.42);
   --veil-glint: #fff1d6;
   --veil-shadow: rgba(140, 170, 255, 0.35); /* свечение под объектами */
