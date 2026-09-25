@@ -310,7 +310,8 @@ class VeilBackground {
     else this.drawFloor(pal, p);
     if (this.burst) {
       this.burst.draw(pal, this.vt);
-      const on = this.burst.active(this.vt) ? '1' : '';
+      // логотип в окне входа рисует сам burst: целым — до разрыва и после сборки, между ними его нет
+      const on = this.burst.ready ? '1' : '';
       if (this.root.dataset.burst !== on) this.root.dataset.burst = on;
     }
     if (this.scene) this.scene.draw(pal, real);
@@ -517,6 +518,6 @@ class VeilBackground {
 }
 
 // доступно как обычный <script>: window.VeilBackground
-VeilBackground.VERSION = '18 — лиса разлетается в плитки и собирается обратно';
+VeilBackground.VERSION = '19 — окно входа по умолчанию, лиса разлетается из логотипа';
 window.VeilBackground = VeilBackground;
 window.VEIL_DEFAULTS = DEFAULTS;
