@@ -41,7 +41,9 @@
   const STEAL = 3; // сколько монет утаскивает лиса
   const FOX_STOP_X = PILE_X - 0.62;
   const FOX_START_X = -5.5;
-  const FOX_END = [-0.6, 26];
+  // путь бегства: сначала влево вдоль переднего края (под окном входа), потом влево вглубь
+  const FOX_BEND = [-5.5, Z - 1];
+  const FOX_END = [-11, 6];
 
   // Места монет в кучке (локальные координаты относительно центра кучки)
   const PILE_SLOTS = [
@@ -479,14 +481,16 @@
           coin = tl > T.foxAt + 0.15;
         } else {
           const k = (tl - T.foxGrab) / (T.foxGone - T.foxGrab);
-          const e = Math.pow(k, 1.4);
-          x = lerp(FOX_STOP_X, FOX_END[0], e);
-          z = lerp(Z, FOX_END[1], e);
+          const e = Math.pow(k, 1.25);
+          // квадратичная кривая Безье: старт → изгиб → финиш
+          const u = 1 - e;
+          x = u * u * FOX_STOP_X + 2 * u * e * FOX_BEND[0] + e * e * FOX_END[0];
+          z = u * u * Z + 2 * u * e * FOX_BEND[1] + e * e * FOX_END[1];
           dir = -1;
           coin = true;
           gait = k * 90;
           const q = this.bg.project(x, 0, z);
-          alpha = q ? clamp(1 - (q[2] - 8) / 16, 0, 1) : 0; // растворяется в бездне
+          alpha = q ? clamp(1 - (q[2] - 8) / 16, 0, 1) * (1 - ease((k - 0.55) / 0.45)) : 0; // растворяется в бездне
         }
         c.globalAlpha = this.vis * alpha;
         this.local(x, z, dir, (c) => this.drawFox(c, { gait, run, coin, wag: tl }));

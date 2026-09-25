@@ -466,6 +466,6 @@ class VeilBackground {
 }
 
 // доступно как обычный <script>: window.VeilBackground
-VeilBackground.VERSION = '11 — без вуалей, шахтёр правее';
+VeilBackground.VERSION = '12 — лиса убегает налево';
 window.VeilBackground = VeilBackground;
 window.VEIL_DEFAULTS = DEFAULTS;
