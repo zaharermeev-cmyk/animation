@@ -506,6 +506,6 @@ class VeilBackground {
 }
 
 // доступно как обычный <script>: window.VeilBackground
-VeilBackground.VERSION = '14 — эффекты с тумблерами';
+VeilBackground.VERSION = '15 — убраны прожектор, сейф, мешок, лазеры';
 window.VeilBackground = VeilBackground;
 window.VEIL_DEFAULTS = DEFAULTS;
