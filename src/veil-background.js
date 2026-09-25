@@ -518,6 +518,6 @@ class VeilBackground {
 }
 
 // доступно как обычный <script>: window.VeilBackground
-VeilBackground.VERSION = '22 — схема сразу после пола, лишние дополнения убраны';
+VeilBackground.VERSION = '23 — лиса убегает прямо налево с одной монетой';
 window.VeilBackground = VeilBackground;
 window.VEIL_DEFAULTS = DEFAULTS;

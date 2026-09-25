@@ -53,13 +53,12 @@
   const MOUND_SCALE = 2; // размер кучи земли
   const PILE_X = MINER_X - 0.8;
   const PILE_START = 7; // монет у шахтёра изначально
-  const STEAL = 3; // сколько монет утаскивает лиса
+  const STEAL = 1; // сколько монет утаскивает лиса (одну — в зубах)
   const FOX_STOP_X = PILE_X - 0.62;
   const FOX_START_X = -5.5;
   const FOX_SPEED = 3.0;
-  // путь бегства: сначала влево вдоль переднего края (под окном входа), потом влево вглубь
-  const FOX_BEND = [-5.5, Z - 1];
-  const FOX_END = [-11, 6];
+  // путь бегства: прямо налево вдоль переднего края (под окном входа) и за край экрана
+  const FOX_END_X = -8.5;
   const GUARD = [-3.2, Z + 1.3]; // спящий охранник
   const SCARE_RADIUS = 110; // px — насколько близко навести фонарик
 
@@ -178,9 +177,10 @@
     /** Положение лисы при бегстве (k = 0..1). */
     escapeAt(p, k) {
       const x0 = p.scared != null ? this.entryAt(p, p.scared).x : FOX_STOP_X;
-      const e = Math.pow(clamp(k, 0, 1), 1.25), u = 1 - e;
-      const bend = [Math.min(FOX_BEND[0], x0 - 1.5), FOX_BEND[1]];
-      return [u * u * x0 + 2 * u * e * bend[0] + e * e * FOX_END[0], u * u * Z + 2 * u * e * bend[1] + e * e * FOX_END[1]];
+      // разгон с места, дальше ровный бег
+      const kk = clamp(k, 0, 1);
+      const e = kk < 0.15 ? (kk * kk) / 0.3 : kk - 0.075;
+      return [lerp(x0, FOX_END_X, e / 0.925), Z];
     }
 
     /* ---------- помощники ---------- */
@@ -895,7 +895,7 @@
           dir = -1;
           gait = k * 90;
           const q = bg.project(x, 0, z);
-          alpha = q ? clamp(1 - (q[2] - 8) / 16, 0, 1) * (1 - ease((k - 0.55) / 0.45)) : 0; // растворяется в бездне
+          alpha = q ? 1 - ease((k - 0.8) / 0.2) : 0; // убегает за левый край экрана
         }
         c.globalAlpha = this.alpha * alpha;
         this.local(x, z, dir, (c) => {
