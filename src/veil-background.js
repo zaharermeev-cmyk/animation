@@ -24,6 +24,8 @@ const DEFAULTS = {
   loose: 18, // свободных завитков
   points: 64,
   glints: 70,
+  reach: 0.86, // докуда тянутся вуали от центра (1 — до края экрана)
+  veils: true, // показывать вуали
   bloom: 1,
   strandOpacity: 1,
   // сетка
@@ -143,6 +145,16 @@ class VeilBackground {
     if (!this.running || this.raf || document.hidden) return;
     this.last = performance.now();
     this.raf = requestAnimationFrame((t) => this.frame(t));
+  }
+
+  /** Включить / выключить вуали (плавно). */
+  setVeils(on) {
+    this.opts.veils = !!on;
+  }
+
+  toggleVeils() {
+    this.setVeils(!this.opts.veils);
+    return this.opts.veils;
   }
 
   replay() {
@@ -310,7 +322,7 @@ class VeilBackground {
       const side = rand() < 0.5 ? -1 : 1;
       this.loose.push({
         side,
-        x0: side < 0 ? r(0.02, 0.35) : r(0.65, 0.98),
+        x0: side < 0 ? r(0.14, 0.36) : r(0.64, 0.86),
         y0: r(0.05, 0.95),
         len: r(0.08, 0.22),
         angle: r(-0.6, 0.6) + (side < 0 ? 0 : Math.PI),
@@ -329,7 +341,7 @@ class VeilBackground {
   spawnGlint(g, initial = false) {
     const rand = this.rand;
     g.strand = (rand() * this.strands.length) | 0;
-    g.t = initial ? rand() * 0.95 : rand() * 0.3;
+    g.t = initial ? lerp(0.25, 0.95, rand()) : lerp(0.25, 0.45, rand());
     g.speed = lerp(0.01, 0.045, rand());
     const big = rand() < 0.08;
     g.size = big ? lerp(3, 4.5, rand()) : lerp(0.6, 1.6, rand());
@@ -453,6 +465,14 @@ class VeilBackground {
     if (this.opts.hills || this.opts.pit) this.drawGrid(pal, p);
     else this.drawFloor(pal, p);
     this.drawShadows(pal, p);
+    // плавное включение / выключение вуалей
+    const target = this.opts.veils ? 1 : 0;
+    if (this.veilVis === undefined) this.veilVis = target;
+    this.veilVis += clamp(target - this.veilVis, -dt / 0.6, dt / 0.6);
+    if (this.veilVis <= 0) {
+      this.updateObjects(p);
+      return;
+    }
     this.drawSmoke(pal);
     this.computeWater();
     this.drawWaterBody(pal);
@@ -663,7 +683,7 @@ class VeilBackground {
   /** Общая форма потока от края экрана к центру. */
   flow(side, t, y0, yEnd, xEnd, amp, freq, speed, phase) {
     const { W, H } = this;
-    const xOuter = side < 0 ? -0.06 * W : 1.06 * W;
+    const xOuter = W / 2 + side * this.opts.reach * (W / 2);
     const fx = W / 2 + side * xEnd * W;
     const e = Math.pow(1 - t, 1.1);
     const tt = this.time * speed;
@@ -680,13 +700,13 @@ class VeilBackground {
 
   gradientFor(ctx, side, xEnd, color, a, reveal, tEnd = 1, fadeIn = 0.14) {
     const { W } = this;
-    const xOuter = side < 0 ? -0.06 * W : 1.06 * W;
+    const xOuter = W / 2 + side * this.opts.reach * (W / 2);
     const fx = W / 2 + side * xEnd * W;
     const grad = ctx.createLinearGradient(xOuter, 0, fx, 0);
     const STOPS = 12;
     for (let k = 0; k < STOPS; k++) {
       const t = k / (STOPS - 1);
-      const prof = t < fadeIn ? t / fadeIn : t < tEnd - 0.12 ? 1 : clamp((tEnd - t) / 0.12, 0, 1);
+      const prof = t < fadeIn ? smooth(t / fadeIn) : t < tEnd - 0.12 ? 1 : clamp((tEnd - t) / 0.12, 0, 1);
       grad.addColorStop(t, rgba(color, a * prof * this.maskAt(reveal, t)));
     }
     return grad;
@@ -721,7 +741,7 @@ class VeilBackground {
       for (let i = 2; i < top.length; i += 2) c.lineTo(top[i], top[i + 1]);
       for (let i = bot.length - 2; i >= 0; i -= 2) c.lineTo(bot[i], bot[i + 1]);
       c.closePath();
-      c.fillStyle = this.gradientFor(c, s.side, s.xEnd, pal.smoke, s.alpha * (pal.additive ? 0.32 : 0.25) * pal.intensity, reveal, 1, 0.3);
+      c.fillStyle = this.gradientFor(c, s.side, s.xEnd, pal.smoke, s.alpha * (pal.additive ? 0.32 : 0.25) * pal.intensity, reveal, 1, 0.42);
       c.fill();
     }
     if (!any) return;
@@ -731,6 +751,7 @@ class VeilBackground {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalCompositeOperation = pal.additive ? 'lighter' : 'source-over';
     ctx.filter = `blur(${Math.round(20 * this.dpr)}px)`;
+    ctx.globalAlpha = this.veilVis;
     ctx.drawImage(this.smokeCanvas, 0, 0, this.canvas.width, this.canvas.height);
     ctx.filter = 'none';
     ctx.restore();
@@ -760,14 +781,14 @@ class VeilBackground {
   /** Градиент вдоль ленты: форма, проявление и яркость там, где лента повёрнута ребром. */
   waterGradient(c, w, color, a, edgeBoost = 0) {
     const { W } = this;
-    const xOuter = w.side < 0 ? -0.06 * W : 1.06 * W;
+    const xOuter = W / 2 + w.side * this.opts.reach * (W / 2);
     const fx = W / 2 + w.side * w.xEnd * W;
     const g = c.createLinearGradient(xOuter, 0, fx, 0);
     const n = w.x.length, STOPS = 16, H = this.H;
     for (let k = 0; k < STOPS; k++) {
       const t = k / (STOPS - 1);
       const i = Math.round(t * (n - 1));
-      const prof = t < 0.2 ? t / 0.2 : t < 0.86 ? 1 : (1 - t) / 0.14;
+      const prof = t < 0.38 ? smooth(t / 0.38) : t < 0.86 ? 1 : (1 - t) / 0.14;
       const flat = Math.abs(w.hw[i]) / (H * w.width + 1e-6); // 0 — ребром, 1 — плашмя
       const boost = 1 + edgeBoost * Math.pow(1 - clamp(flat, 0, 1), 3);
       g.addColorStop(t, rgba(color, a * prof * boost * this.maskAt(w.reveal, t)));
@@ -802,6 +823,7 @@ class VeilBackground {
     ctx.save();
     ctx.globalCompositeOperation = 'source-over';
     ctx.filter = `blur(${Math.round(5 * this.dpr)}px)`;
+    ctx.globalAlpha = this.veilVis;
     for (const w of this.waters) {
       if (w.reveal <= 0) continue;
       this.bandPath(ctx, w, -0.5, 0.5);
@@ -908,7 +930,7 @@ class VeilBackground {
       c.moveTo(s.pts[0], s.pts[1]);
       for (let p = 1; p < n; p++) c.lineTo(s.pts[p * 2], s.pts[p * 2 + 1]);
       c.lineWidth = s.width;
-      c.strokeStyle = this.gradientFor(c, rb.side, rb.xEnd, color, base * s.alpha, rb.reveal, s.tEnd);
+      c.strokeStyle = this.gradientFor(c, rb.side, rb.xEnd, color, base * s.alpha, rb.reveal, s.tEnd, 0.32);
       c.stroke();
     }
 
@@ -949,8 +971,10 @@ class VeilBackground {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalCompositeOperation = pal.additive ? 'lighter' : 'source-over';
     ctx.globalAlpha = opts.bloom * (pal.additive ? 0.9 : 0.45);
+    ctx.globalAlpha *= this.veilVis;
     ctx.drawImage(this.bloomCanvas, 0, 0, this.canvas.width, this.canvas.height);
     ctx.globalAlpha = 1;
+    ctx.globalAlpha = this.veilVis;
     ctx.drawImage(this.layer, 0, 0);
     ctx.restore();
   }
@@ -982,6 +1006,8 @@ class VeilBackground {
 
   drawGlints(pal, dt) {
     const { opts } = this;
+    this.ctx.save();
+    this.ctx.globalAlpha = this.veilVis;
     const n = opts.points;
     this.ctx.globalCompositeOperation = pal.additive ? 'lighter' : 'source-over';
     const glintB = mixColor(pal.glint, pal.b, 0.5);
@@ -1010,6 +1036,7 @@ class VeilBackground {
       this.drawDot(x, y, g.size, g.bead ? glintB : pal.glint, life * tw * pal.intensity * fadeIn, g.bead);
     }
     this.ctx.globalCompositeOperation = 'source-over';
+    this.ctx.restore();
   }
 
   /* ---------- объекты ---------- */

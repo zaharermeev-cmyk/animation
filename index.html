@@ -69,6 +69,7 @@
   <div class="controls">
     <button id="replay">Повторить интро</button>
     <button id="objects">Объекты</button>
+    <button id="veils">Вуали: вкл</button>
     <button id="theme">Тема</button>
   </div>
 
@@ -99,6 +100,9 @@
     bg.start();
 
     document.getElementById('replay').onclick = () => bg.replay();
+    document.getElementById('veils').onclick = (e) => {
+      e.target.textContent = 'Вуали: ' + (bg.toggleVeils() ? 'вкл' : 'выкл');
+    };
     document.getElementById('theme').onclick = () => {
       const root = document.documentElement;
       const next = root.dataset.theme === 'dark' ? 'light' : 'dark';
