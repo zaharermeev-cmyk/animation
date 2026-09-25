@@ -27,14 +27,14 @@ const DEFAULTS = {
   parallax: true,
   maxDpr: 1.5,
   intro: {
-    delay: 0.5, // пустой экран, с
-    grid: 2.8, // проявление плиток
+    delay: 1.4, // до начала проявления плиток (с логотипом — момент его разрыва)
+    grid: 3.8, // проявление плиток
   },
   // после окончания сцены плитки пропадают и всё начинается заново
   loop: true,
   outro: {
-    duration: 2.8, // исчезновение плиток
-    pause: 0.8, // пустой экран перед повтором
+    duration: 3.4, // исчезновение плиток (с логотипом — сборка лисы обратно)
+    pause: 0.8, // пауза перед повтором
   },
 };
 
@@ -252,6 +252,8 @@ class VeilBackground {
   /* ---------- интро ---------- */
 
   gridReveal() {
+    // с логотипом плитки проявляются из осколков: здесь только флаг «интро идёт / готово»
+    if (this.burst && this.burst.ready) return this.vt >= this.burst.revealEnd ? 1.3 : 1;
     const { delay, grid } = this.opts.intro;
     const p = smooth(clamp((this.clock - delay) / grid, 0, 1)) * 1.3;
     // финал: плитки пропадают от краёв к центру (интро наоборот)
@@ -266,7 +268,8 @@ class VeilBackground {
     const { duration, pause } = this.opts.outro;
     const end = sc.endTime();
     if (this.clock > end + duration + pause) {
-      this.clock = 0;
+      // лиса уже собрана — продолжаем с неё, без пустого экрана
+      this.clock = this.burst && this.burst.ready ? this.burst.restAt : 0;
       return;
     }
     this.outro = clamp((this.clock - end) / duration, 0, 1);
@@ -301,9 +304,15 @@ class VeilBackground {
     ctx.clearRect(0, 0, W, H);
 
     this.updateLoop();
+    this.vt = this.burst ? this.burst.virtualTime() : this.clock;
     const p = this.gridReveal();
     if (this.opts.hills || this.opts.pit) this.drawGrid(pal, p);
     else this.drawFloor(pal, p);
+    if (this.burst) {
+      this.burst.draw(pal, this.vt);
+      const on = this.burst.active(this.vt) ? '1' : '';
+      if (this.root.dataset.burst !== on) this.root.dataset.burst = on;
+    }
     if (this.scene) this.scene.draw(pal, real);
   }
 
@@ -391,7 +400,9 @@ class VeilBackground {
     f.fillRect(0, 0, W, H);
 
     const ctx = this.ctx;
-    if (intro) {
+    const burstMask = intro && this.burst && this.burst.ready;
+    if (burstMask) this.burst.maskFloor(f, this.vt);
+    else if (intro) {
       // «эллиптические» координаты: r = 0 в центре, r = 1 в углу экрана
       const ellipse = (c) =>
         c.setTransform((dpr * W) / 2 * Math.SQRT2, 0, 0, (dpr * H) / 2 * Math.SQRT2, (dpr * W) / 2, (dpr * H) / 2);
@@ -421,7 +432,7 @@ class VeilBackground {
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.drawImage(this.floorCanvas, 0, 0);
-    if (intro) {
+    if (intro && !burstMask) {
       ctx.globalCompositeOperation = pal.additive ? 'lighter' : 'source-over';
       ctx.drawImage(this.flashCanvas, 0, 0);
       ctx.globalAlpha = 0.8;
@@ -506,6 +517,6 @@ class VeilBackground {
 }
 
 // доступно как обычный <script>: window.VeilBackground
-VeilBackground.VERSION = '17 — окно входа выровнено по сайту';
+VeilBackground.VERSION = '18 — лиса разлетается в плитки и собирается обратно';
 window.VeilBackground = VeilBackground;
 window.VEIL_DEFAULTS = DEFAULTS;

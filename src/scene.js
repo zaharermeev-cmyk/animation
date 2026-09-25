@@ -9,7 +9,6 @@
  *   schema     — «схема» на плитках: узлы, связи, монеты бегут по маршрутам
  *   guard      — спящий охранник, лиса крадётся мимо на цыпочках
  *   flashlight — курсор-фонарик: наведи на лису — испугается и убежит
- *   finale     — в конце монеты собираются в маску вора
  *
  * Подключение:
  *   const bg = new VeilBackground(canvas);
@@ -28,7 +27,6 @@
     ['schema', 'Схема на плитках'],
     ['guard', 'Спящий охранник'],
     ['flashlight', 'Курсор-фонарик'],
-    ['finale', 'Финал: маска из монет'],
   ];
 
   // Базовые тайминги (секунды от начала цикла)
@@ -38,7 +36,6 @@
     foxIn: 5.8, // лиса выбегает
     grab: 0.7, // сколько лиса хватает монеты
     escape: 3.1, // бегство до полного исчезновения
-    finale: 2.8,
   };
 
   // Расстановка на полу (мировые координаты)
@@ -69,33 +66,6 @@
     [-0.31, 0.0], [0.31, 0], [0, 0.14], [-0.2, 0.07], [0.2, 0.07],
     [-0.1, 0.14], [0.1, 0.14], [0, 0.21],
   ];
-
-  /** Точки контура маски вора (в единицах: ширина маски ≈ 2). */
-  function maskPoints() {
-    const pts = [];
-    const N = 22;
-    // верхний край ленты
-    for (let i = 0; i <= N; i++) {
-      const t = i / N, x = lerp(-1, 1, t);
-      pts.push([x, -0.28 * Math.sin(Math.PI * t) + 0.05]);
-    }
-    // нижний край с выемкой под нос
-    for (let i = 1; i < N; i++) {
-      const t = i / N, x = lerp(1, -1, t);
-      pts.push([x, 0.34 * Math.sin(Math.PI * t) + 0.05 - 0.2 * Math.exp(-(x * x) / 0.03)]);
-    }
-    // прорези для глаз
-    for (const sx of [-1, 1]) {
-      for (let i = 0; i < 9; i++) {
-        const a = (i / 9) * TAU;
-        pts.push([sx * 0.45 + Math.cos(a) * 0.22, 0.02 + Math.sin(a) * 0.1]);
-      }
-    }
-    // завязки
-    for (const [dx, dy] of [[-1.15, -0.12], [-1.3, -0.2], [-1.15, 0.2], [-1.28, 0.3]]) pts.push([dx, dy]);
-    return pts;
-  }
-  const MASK = maskPoints();
 
   class MinerScene {
     constructor(bg, options = {}) {
@@ -172,9 +142,8 @@
         noticeFrom,
         noticeTo: escStart + 2.6,
         digUntil: noticeFrom - 0.1,
-        finaleStart: escEnd + 0.1,
       };
-      p.end = fx.finale ? p.finaleStart + T.finale : escEnd;
+      p.end = escEnd;
       this._planKey = key;
       this._plan = p;
       return p;
@@ -526,15 +495,6 @@
         c.lineTo(pb[0], pb[1]);
         c.stroke();
         c.restore();
-        // монета бежит по маршруту
-        if (k >= 1) {
-          const u = ((t * 0.35 + ei * 0.37) % 1);
-          const x = lerp(A[0], B[0], u), z = lerp(A[1], B[1], u);
-          this.local(x, z, 1, (c) => {
-            c.globalAlpha *= Math.sin(Math.PI * u);
-            this.drawCoinFlat(c, 0, 0.09, 0.08);
-          });
-        }
       });
       // узлы — подсвеченные плитки
       NODES.forEach(([x, z], i) => {
@@ -602,35 +562,6 @@
           }
         });
       }
-    }
-
-    drawFinale(p, tl, sources) {
-      const k0 = tl - p.finaleStart;
-      if (k0 <= 0) return;
-      const c = this.ctx, W = this.bg.W, H = this.bg.H;
-      const cx = W / 2, cy = H * 0.15, sc = Math.min(W * 0.11, H * 0.16);
-      MASK.forEach(([mx, my], i) => {
-        const delay = (i % 17) * 0.035 + Math.floor(i / 17) * 0.05;
-        const k = ease((k0 - delay) / 1.2);
-        if (k <= 0) return;
-        const src = sources[i % sources.length];
-        const tx = cx + mx * sc, ty = cy + my * sc;
-        const x = lerp(src[0], tx, k);
-        const y = lerp(src[1], ty, k) - Math.sin(Math.PI * k) * H * 0.12;
-        const r = lerp(src[2], 4, k);
-        const tw = k >= 1 ? 0.75 + 0.25 * Math.sin(tl * 4 + i) : 1;
-        c.save();
-        c.globalAlpha *= tw;
-        c.lineWidth = 1.2;
-        c.beginPath();
-        c.arc(x, y, r, 0, TAU);
-        c.fill();
-        c.stroke();
-        c.beginPath();
-        c.arc(x, y, r * 0.55, 0, TAU);
-        c.stroke();
-        c.restore();
-      });
     }
 
     /* ---------- кадр ---------- */
@@ -842,19 +773,6 @@
             Math.hypot(foxScreen[0] - ptr.px, foxScreen[1] - ptr.py) < SCARE_RADIUS) {
           this.scaredAt = tl;
         }
-      }
-
-      // ---- финал: монеты собираются в маску вора ----
-      if (fx.finale && tl >= p.finaleStart) {
-        const src = [];
-        // монеты «поднимаются» с плиток
-        for (let i = 0; i < 24; i++) {
-          const q = bg.project(-8 + ((i * 7.3) % 16), 0, Z + 1 + ((i * 3.7) % 9));
-          if (q) src.push([q[0], q[1], 2]);
-        }
-        c.fillStyle = this.fill;
-        c.strokeStyle = this.ink;
-        this.drawFinale(p, tl, src);
       }
 
       c.restore();

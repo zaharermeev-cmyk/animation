@@ -78,7 +78,9 @@
     .login.hidden { opacity: 0; pointer-events: none; }
     /* как на живом сайте: логотип над заголовком */
     .login-brand { display: flex; flex-direction: column; align-items: center; gap: 0; margin-bottom: 26px; }
-    .login-brand img { height: 162px; width: auto; display: block; }
+    .login-brand img { height: 162px; width: auto; display: block; transition: opacity 0.5s ease; }
+    /* пока лиса летает осколками — логотип в окне скрыт */
+    :root[data-burst='1'] .login-brand img { opacity: 0; transition: none; }
     /* логотип под тему: белая лиса — на тёмной, тёмная — на светлой */
     .logo-light { display: none !important; }
     :root:not([data-theme='dark']) .logo-dark { display: none !important; }
@@ -142,6 +144,7 @@
   <script>
     document.write('<script src="src/veil-background.js?v=' + __v + '"><\/script>');
     document.write('<script src="src/scene.js?v=' + __v + '"><\/script>');
+    document.write('<script src="src/logo-burst.js?v=' + __v + '"><\/script>');
   </script>
   <script>
 
@@ -151,6 +154,17 @@
     let saved = {};
     try { saved = JSON.parse(localStorage.getItem('fx') || '{}'); } catch (e) {}
     bg.scene = new MinerScene(bg, { fx: saved });
+    // лиса-логотип: в начале разлетается на плитки, в конце собирается обратно.
+    // Если окно входа открыто — разлетается именно логотип из окна.
+    bg.burst = new LogoBurst(bg, {
+      dark: 'logo-dark-still.svg',
+      light: 'logo-light-still.svg',
+      anchor: () => {
+        if (document.getElementById('login').classList.contains('hidden')) return null;
+        const img = [...document.querySelectorAll('.login-brand img')].find((i) => getComputedStyle(i).display !== 'none');
+        return img && img.getBoundingClientRect();
+      },
+    });
 
     const fxPanel = document.getElementById('fx');
     for (const [key, label] of MinerScene.FX) {
