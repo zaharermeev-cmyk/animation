@@ -697,6 +697,25 @@
       }
     }
 
+    /** Пятно света вокруг курсора. Вызывается движком каждый кадр, независимо от фазы сцены. */
+    drawFlashlight(pal) {
+      const ptr = this.bg.pointer;
+      if (!this.fx.flashlight || !ptr.active) return;
+      const c = this.bg.ctx, additive = pal.additive;
+      this.pal = pal;
+      c.save();
+      c.globalAlpha = 1;
+      c.globalCompositeOperation = additive ? 'lighter' : 'source-over';
+      const g = c.createRadialGradient(ptr.px, ptr.py, 0, ptr.px, ptr.py, 150);
+      g.addColorStop(0, this.inkA(additive ? 0.16 : 0.07));
+      g.addColorStop(1, this.inkA(0));
+      c.fillStyle = g;
+      c.beginPath();
+      c.arc(ptr.px, ptr.py, 150, 0, TAU);
+      c.fill();
+      c.restore();
+    }
+
     /* ---------- кадр ---------- */
 
     draw(pal, real) {
@@ -909,16 +928,7 @@
       // ---- курсор-фонарик ----
       const ptr = bg.pointer;
       if (fx.flashlight && ptr.active) {
-        c.save();
-        c.globalCompositeOperation = additive ? 'lighter' : 'source-over';
-        const g = c.createRadialGradient(ptr.px, ptr.py, 0, ptr.px, ptr.py, 150);
-        g.addColorStop(0, this.inkA(additive ? 0.16 : 0.07));
-        g.addColorStop(1, this.inkA(0));
-        c.fillStyle = g;
-        c.beginPath();
-        c.arc(ptr.px, ptr.py, 150, 0, TAU);
-        c.fill();
-        c.restore();
+        // само пятно света рисует drawFlashlight() — оно видно всегда, а не только во время сцены
         // лису поймали лучом — пугается и убегает
         if (foxScreen && this.scaredAt == null && tl >= p.tIn + 0.3 && tl < p.escStart &&
             Math.hypot(foxScreen[0] - ptr.px, foxScreen[1] - ptr.py) < SCARE_RADIUS) {

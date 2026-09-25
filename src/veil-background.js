@@ -101,6 +101,9 @@ class VeilBackground {
 
     addEventListener('resize', this.onResize);
     addEventListener('pointermove', this.onPointer, { passive: true });
+    // курсор мог уже стоять над страницей — ловим его при первом же наведении/клике
+    document.addEventListener('pointerover', this.onPointer, { passive: true });
+    document.addEventListener('pointerdown', this.onPointer, { passive: true });
     document.addEventListener('pointerout', this.onPointerOut);
     document.addEventListener('visibilitychange', this.onVisibility);
     this.themeObserver = new MutationObserver(this.onTheme);
@@ -152,6 +155,8 @@ class VeilBackground {
     this.pause();
     removeEventListener('resize', this.onResize);
     removeEventListener('pointermove', this.onPointer);
+    document.removeEventListener('pointerover', this.onPointer);
+    document.removeEventListener('pointerdown', this.onPointer);
     document.removeEventListener('pointerout', this.onPointerOut);
     document.removeEventListener('visibilitychange', this.onVisibility);
     this.themeObserver.disconnect();
@@ -315,6 +320,7 @@ class VeilBackground {
       if (this.root.dataset.burst !== on) this.root.dataset.burst = on;
     }
     if (this.scene) this.scene.draw(pal, real);
+    if (this.scene && this.scene.drawFlashlight) this.scene.drawFlashlight(pal);
   }
 
   /** Мировая точка → координаты камеры [xc, yc, zc]. */
@@ -518,6 +524,6 @@ class VeilBackground {
 }
 
 // доступно как обычный <script>: window.VeilBackground
-VeilBackground.VERSION = '23 — лиса убегает прямо налево с одной монетой';
+VeilBackground.VERSION = '24 — фонарик виден всегда';
 window.VeilBackground = VeilBackground;
 window.VEIL_DEFAULTS = DEFAULTS;
