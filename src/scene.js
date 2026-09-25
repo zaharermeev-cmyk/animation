@@ -10,7 +10,7 @@
  *   guard      — спящий охранник, лиса крадётся мимо        (всегда включено)
  *   flashlight — курсор-фонарик: наведи на лису — убежит     (всегда включено)
  *   Дополнения к схеме (по умолчанию выключены):
- *   sIcons, sPulses, sWave, sBuild, sLabels, sCounters, sShadow, sCross, sRadar, sFoxPath, sMiner
+ *   sPulses, sBuild, sShadow, sCross
  *
  * Подключение:
  *   const bg = new VeilBackground(canvas);
@@ -30,17 +30,10 @@
     ['schema', 'Схема на плитках', { hidden: true }],
     ['guard', 'Спящий охранник', { hidden: true }],
     ['flashlight', 'Курсор-фонарик', { hidden: true }],
-    ['sIcons', 'Иконки в узлах', { group: 'Схема' }],
     ['sPulses', 'Импульсы по связям', { group: 'Схема' }],
-    ['sWave', 'Волна при краже', { group: 'Схема' }],
     ['sBuild', 'Строится и стирается', { group: 'Схема' }],
-    ['sLabels', 'Подписи на плитках', { group: 'Схема' }],
-    ['sCounters', 'Счётчики сумм', { group: 'Схема' }],
     ['sShadow', 'Теневые связи', { group: 'Схема' }],
     ['sCross', 'Узлы засвечиваются', { group: 'Схема' }],
-    ['sRadar', 'Радар', { group: 'Схема' }],
-    ['sFoxPath', 'След лисы в схеме', { group: 'Схема' }],
-    ['sMiner', 'Шахтёр питает схему', { group: 'Схема' }],
   ];
 
   // Базовые тайминги (секунды от начала цикла)
@@ -74,12 +67,6 @@
   const NODES = [[-8.5, 0.5], [-6, 3.5], [-9.5, 6.5], [-5.5, 8.5], [6.5, 1.5], [9, 4.5], [5.5, 6], [8, 9]];
   const EDGES = [[0, 1], [1, 2], [1, 3], [2, 3], [4, 5], [4, 6], [5, 7], [6, 7], [3, 6]];
   const SHADOW_EDGES = [[0, 2], [1, 6], [4, 7], [2, 7], [0, 5]]; // скрытые каналы
-  const NODE_ICONS = ['card', 'wallet', 'bank', 'phone', 'safe', 'btc', 'globe', 'key'];
-  const LABELS = ['#A7-0x3F', 'mixer', '→ BTC', 'acc 4471', '0x9e…c2', 'drop', 'P2P', 'cash out', '+12 400', '−3 150', 'SWIFT', 'relay 7'];
-  const COUNTER_BASE = [12400, 3150, 88210, 540, 27700, 9990, 1480, 64300];
-  const RADAR_C = [0, 3.5];
-  const MINER_NODE = 4; // узел, в который шахтёр «питает» схему
-  const FOX_NODE = 2; // узел, к которому пристыковывается след лисы
   const hash = (a, b) => {
     const v = Math.sin(a * 12.9898 + b * 78.233) * 43758.5453;
     return v - Math.floor(v);
@@ -114,6 +101,13 @@
     setFx(key, on) {
       this.fx[key] = !!on;
       this._planKey = null;
+    }
+
+    /** Когда начинает рисоваться схема — как только пол собрался. */
+    schemaStart() {
+      const bg = this.bg, b = bg.burst;
+      if (b && b.ready) return b.revealEnd - 0.4;
+      return bg.opts.intro.delay + bg.opts.intro.grid * 0.85;
     }
 
     /** Когда сцена закончилась — по bg.clock. */
@@ -508,20 +502,6 @@
       return pts.some((q) => !q) ? null : pts;
     }
 
-    /** Текст, лежащий на полу в перспективе. */
-    floorText(x, z, text, size, alpha) {
-      const bg = this.bg, c = this.ctx;
-      const p0 = bg.project(x, 0, z), px = bg.project(x + 1, 0, z), pz = bg.project(x, 0, z + 1);
-      if (!p0 || !px || !pz) return;
-      const d = bg.dpr, k = size / 32;
-      c.save();
-      c.setTransform(d * (px[0] - p0[0]) * k, d * (px[1] - p0[1]) * k, -d * (pz[0] - p0[0]) * k, -d * (pz[1] - p0[1]) * k, d * p0[0], d * p0[1]);
-      c.font = '600 32px ui-monospace, Menlo, Consolas, monospace';
-      c.fillStyle = this.inkA(alpha);
-      c.fillText(text, 0, 0);
-      c.restore();
-    }
-
     /** Положение узла (с эффектом «засвечивания» узлы переезжают). */
     nodeAt(i, t) {
       const [bx, bz] = NODES[i];
@@ -540,68 +520,10 @@
       return { x, z, a: ease((age - 1.2) / 0.6), cross: 0 };
     }
 
-    drawIcon(c, kind) {
-      const L = (pts) => this.line(c, pts);
-      const S = (fn) => this.shape(c, fn);
-      c.lineWidth = 0.028;
-      switch (kind) {
-        case 'card':
-          S((c) => c.roundRect(-0.2, 0, 0.4, 0.26, 0.03));
-          L([-0.2, 0.18, 0.2, 0.18]);
-          c.strokeRect(-0.14, 0.05, 0.08, 0.06);
-          break;
-        case 'wallet':
-          S((c) => c.roundRect(-0.19, 0, 0.38, 0.26, 0.04));
-          S((c) => c.roundRect(0.06, 0.08, 0.15, 0.1, 0.03));
-          L([-0.17, 0.26, 0.1, 0.33, 0.14, 0.26]);
-          break;
-        case 'bank':
-          S((c) => { c.moveTo(-0.22, 0.24); c.lineTo(0, 0.36); c.lineTo(0.22, 0.24); c.closePath(); });
-          for (const x of [-0.14, 0, 0.14]) L([x, 0.04, x, 0.22]);
-          L([-0.22, 0.02, 0.22, 0.02]);
-          break;
-        case 'phone':
-          S((c) => c.roundRect(-0.1, 0, 0.2, 0.36, 0.04));
-          L([-0.03, 0.31, 0.03, 0.31]);
-          L([-0.06, 0.06, 0.06, 0.06]);
-          break;
-        case 'safe':
-          S((c) => c.roundRect(-0.17, 0, 0.34, 0.32, 0.03));
-          S((c) => c.arc(0, 0.16, 0.07, 0, TAU));
-          L([0, 0.16, 0.04, 0.2]);
-          break;
-        case 'btc':
-          S((c) => c.arc(0, 0.17, 0.17, 0, TAU));
-          c.save();
-          c.scale(0.01, -0.01);
-          c.fillStyle = this.ink;
-          c.font = '700 22px system-ui, sans-serif';
-          c.textAlign = 'center';
-          c.textBaseline = 'middle';
-          c.fillText('₿', 0, -17);
-          c.restore();
-          break;
-        case 'globe':
-          S((c) => c.arc(0, 0.17, 0.17, 0, TAU));
-          c.beginPath();
-          c.ellipse(0, 0.17, 0.07, 0.17, 0, 0, TAU);
-          c.stroke();
-          L([-0.17, 0.17, 0.17, 0.17]);
-          break;
-        case 'key':
-          S((c) => c.arc(-0.1, 0.17, 0.08, 0, TAU));
-          L([-0.02, 0.17, 0.2, 0.17]);
-          L([0.14, 0.17, 0.14, 0.1]);
-          L([0.19, 0.17, 0.19, 0.11]);
-          break;
-      }
-    }
-
     /**
-     * «Схема» на плитках и все её дополнения.
-     * t — время сцены, tl — время внутри цикла, p — план цикла, stolen — сколько монет украдено.
+     * «Схема» на плитках и её дополнения. t — время схемы (0 — пол только что собрался).
      */
-    drawSchema(t, tl, p, stolen) {
+    drawSchema(t) {
       const bg = this.bg, c = this.ctx, fx = this.fx;
       const additive = this.pal.additive;
       const nE = EDGES.length;
@@ -611,7 +533,7 @@
       const edgeK = [], nodeK = [];
       if (fx.sBuild) {
         // связи прорисовываются по одной, как будто маршрут чертят пером; в финале стираются
-        const start = EDGES.map((_, e) => 0.6 + e * 0.7);
+        const start = EDGES.map((_, e) => 0.3 + e * 0.7);
         const nodeStart = NODES.map((_, i) => Math.min(...EDGES.map(([a, b], e) => (a === i || b === i ? start[e] : 99))));
         EDGES.forEach((_, e) => {
           const erase = clamp(outro * 2 * nE - (nE - 1 - e), 0, 1);
@@ -619,73 +541,12 @@
         });
         NODES.forEach((_, i) => (nodeK[i] = ease((t - nodeStart[i]) / 0.3) * (1 - clamp(outro * 2, 0, 1))));
       } else {
-        const appear = (i) => Math.max(0, t - 0.4 - i * 0.3);
+        const appear = (i) => Math.max(0, t - i * 0.3);
         NODES.forEach((_, i) => (nodeK[i] = ease(appear(i) / 0.4)));
         EDGES.forEach(([a, b], e) => (edgeK[e] = ease((Math.min(appear(a), appear(b)) - 0.2) / 0.6)));
       }
       const nodes = NODES.map((_, i) => this.nodeAt(i, t));
-
-      // --- подсветка: радар, волна кражи, прибытие импульсов ---
-      const theta = t * 0.8;
-      const radarAt = (x, z) => {
-        if (!fx.sRadar) return 0;
-        let d = (theta - Math.atan2(z - RADAR_C[1], x - RADAR_C[0])) % TAU;
-        if (d < 0) d += TAU;
-        return Math.exp(-d / 0.45);
-      };
-      const grabbed = p && stolen > 0 && tl >= p.grabStart;
-      const waveAge = grabbed ? tl - p.grabStart : -1;
-      const waveOn = fx.sWave && waveAge >= 0 && waveAge < 2.4;
-      const waveR = waveAge * 8;
-      const waveAt = (x, z) => (waveOn ? Math.exp(-(((Math.hypot(x - PILE_X, z - Z) - waveR) / 1.4) ** 2)) * (1 - waveAge / 2.4) : 0);
       const flash = NODES.map(() => 0);
-
-      // --- радар: веер света по полу ---
-      if (fx.sRadar) {
-        const Rr = 13, STEPS = 14;
-        c.save();
-        c.globalCompositeOperation = additive ? 'lighter' : 'source-over';
-        const cp = bg.project(RADAR_C[0], 0, RADAR_C[1]);
-        for (let j = 0; j < STEPS && cp; j++) {
-          const a1 = theta - j * 0.05, a2 = theta - (j + 1) * 0.05;
-          const q1 = bg.project(RADAR_C[0] + Math.cos(a1) * Rr, 0, RADAR_C[1] + Math.sin(a1) * Rr);
-          const q2 = bg.project(RADAR_C[0] + Math.cos(a2) * Rr, 0, RADAR_C[1] + Math.sin(a2) * Rr);
-          if (!q1 || !q2) continue;
-          c.fillStyle = this.inkA((additive ? 0.07 : 0.04) * (1 - j / STEPS));
-          c.beginPath();
-          c.moveTo(cp[0], cp[1]);
-          c.lineTo(q1[0], q1[1]);
-          c.lineTo(q2[0], q2[1]);
-          c.closePath();
-          c.fill();
-        }
-        const qe = bg.project(RADAR_C[0] + Math.cos(theta) * Rr, 0, RADAR_C[1] + Math.sin(theta) * Rr);
-        if (cp && qe) {
-          c.strokeStyle = this.inkA(0.35);
-          c.lineWidth = 1;
-          c.beginPath();
-          c.moveTo(cp[0], cp[1]);
-          c.lineTo(qe[0], qe[1]);
-          c.stroke();
-        }
-        c.restore();
-      }
-
-      // --- волна от кучки шахтёра при краже ---
-      if (waveOn) {
-        c.save();
-        c.strokeStyle = this.inkA(0.7 * (1 - waveAge / 2.4));
-        c.lineWidth = 2;
-        c.beginPath();
-        for (let k = 0; k <= 64; k++) {
-          const a = (k / 64) * TAU;
-          const q = bg.project(PILE_X + Math.cos(a) * waveR, 0, Z + Math.sin(a) * waveR);
-          if (!q) continue;
-          k ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]);
-        }
-        c.stroke();
-        c.restore();
-      }
 
       // --- пунктирная линия по полу ---
       const dashed = (A, B, k, alpha, width = 1.2, dash = [6, 5]) => {
@@ -720,12 +581,10 @@
         const k = edgeK[e];
         if (k <= 0) return;
         const A = nodes[a], B = nodes[b];
-        const mx = (A.x + B.x) / 2, mz = (A.z + B.z) / 2;
-        const boost = radarAt(mx, mz) * 0.5 + waveAt(mx, mz);
         const vis = Math.min(A.a, B.a);
-        const tip = dashed([A.x, A.z], [B.x, B.z], k, (0.45 + 0.5 * boost) * vis, 1.2 + boost);
+        const tip = dashed([A.x, A.z], [B.x, B.z], k, 0.45 * vis);
         // перо, которое чертит связь
-        if (fx.sBuild && k > 0 && k < 1 && tip) {
+        if (fx.sBuild && k < 1 && tip) {
           c.save();
           c.fillStyle = this.ink;
           c.beginPath();
@@ -761,59 +620,11 @@
         }
       });
 
-      // --- шахтёр «питает» схему: импульс от кучки к узлу на каждый удар кирки ---
-      if (fx.sMiner && nodeK[MINER_NODE] > 0) {
-        const N = nodes[MINER_NODE];
-        dashed([PILE_X, Z], [N.x, N.z], 1, 0.28 * nodeK[MINER_NODE] * N.a, 1, [3, 5]);
-        if (tl >= T.strike && p && tl < p.digUntil + 1.1) {
-          const last = Math.floor((tl - T.strike) / T.swing) * T.swing + T.strike;
-          const k = (tl - last) / 1.1;
-          if (k < 1 && last < p.digUntil) {
-            const q = bg.project(lerp(PILE_X, N.x, k), 0, lerp(Z, N.z, k));
-            if (q) {
-              c.save();
-              c.globalCompositeOperation = additive ? 'lighter' : 'source-over';
-              c.fillStyle = this.inkA(0.95);
-              c.beginPath();
-              c.arc(q[0], q[1], 2.6, 0, TAU);
-              c.fill();
-              c.restore();
-            }
-            if (k > 0.85) flash[MINER_NODE] = Math.max(flash[MINER_NODE], (k - 0.85) / 0.15);
-          }
-        }
-      }
-
-      // --- след лисы становится новой связью схемы ---
-      if (fx.sFoxPath && p && tl >= p.escStart) {
-        const kk = Math.min(1, (tl - p.escStart) / T.escape);
-        c.save();
-        c.strokeStyle = this.inkA(0.55);
-        c.lineWidth = 1.3;
-        c.setLineDash([6, 5]);
-        c.lineDashOffset = -t * 18;
-        c.beginPath();
-        let last = null;
-        for (let k = 0; k <= kk + 1e-6; k += 0.02) {
-          const [x, z] = this.escapeAt(p, k);
-          const q = bg.project(x, 0, z);
-          if (!q) continue;
-          last ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]);
-          last = [x, z];
-        }
-        c.stroke();
-        c.restore();
-        if (kk >= 1 && last) {
-          const N = nodes[FOX_NODE];
-          dashed(last, [N.x, N.z], ease((tl - p.escEnd) / 0.6), 0.55);
-        }
-      }
-
       // --- узлы: подсвеченные плитки ---
       nodes.forEach((n, i) => {
         const k = nodeK[i] * n.a;
         if (k <= 0) return;
-        const boost = Math.max(flash[i], radarAt(n.x, n.z), waveAt(n.x, n.z));
+        const boost = flash[i];
         const pulse = 0.6 + 0.4 * Math.sin(t * 2.4 + i);
         const pts = this.tileQuad(n.x, n.z, 0.34 * nodeK[i]);
         if (!pts) return;
@@ -840,36 +651,6 @@
           c.stroke();
         }
         c.restore();
-
-        // подписи, лежащие на плитках
-        if (fx.sLabels) {
-          const li = Math.floor(hash(i, Math.floor(t / 2.7 + i * 0.37)) * LABELS.length);
-          this.floorText(n.x + 0.45, n.z - 0.3, LABELS[li], 0.3, 0.6 * k);
-        }
-        // иконки над узлами
-        if (fx.sIcons) {
-          c.save();
-          c.globalAlpha *= k;
-          this.local(n.x, n.z, 1, (c) => {
-            c.translate(-0.02, 0.1 + Math.sin(t * 1.8 + i) * 0.03);
-            this.drawIcon(c, NODE_ICONS[i % NODE_ICONS.length]);
-          });
-          c.restore();
-        }
-        // счётчики сумм
-        if (fx.sCounters) {
-          const v = COUNTER_BASE[i % COUNTER_BASE.length] + Math.floor(t * (7 + i * 3));
-          c.save();
-          c.globalAlpha *= k;
-          this.local(n.x, n.z, 1, (c) => {
-            c.scale(0.01, -0.01);
-            c.font = '600 20px ui-monospace, Menlo, Consolas, monospace';
-            c.textAlign = 'center';
-            c.fillStyle = this.inkA(0.85);
-            c.fillText('$ ' + v.toLocaleString('ru-RU'), 0, fx.sIcons ? -56 : -18);
-          });
-          c.restore();
-        }
       });
     }
 
@@ -925,17 +706,28 @@
       // в финале цикла сцена тает быстрее плиток
       this.alpha = this.vis * (1 - ease((bg.outro || 0) * 1.8));
       if (this.alpha <= 0) return;
-      const t = bg.clock - this.start;
-      if (t <= 0) {
-        this.reset();
-        return;
-      }
-
       const c = (this.ctx = bg.ctx);
       this.pal = pal;
       this.ink = this.inkA(1);
       this.fill = `rgba(${pal.fill[0] | 0},${pal.fill[1] | 0},${pal.fill[2] | 0},1)`;
       const additive = pal.additive;
+
+      // схема рисуется сразу, как только собрался пол (не ждёт шахтёра)
+      if (fx.schema) {
+        const ts = bg.clock - this.schemaStart();
+        if (ts > 0) {
+          c.save();
+          c.globalAlpha = this.alpha;
+          this.drawSchema(ts);
+          c.restore();
+        }
+      }
+
+      const t = bg.clock - this.start;
+      if (t <= 0) {
+        this.reset();
+        return;
+      }
       c.save();
       c.globalCompositeOperation = 'source-over';
       c.globalAlpha = this.alpha;
@@ -981,7 +773,6 @@
       const restore = tl >= 0 && tl < 1.5 && idx > 0 ? ease(tl / 1.5) : 1;
 
       // ---- схема на плитках (фоном) ----
-      if (fx.schema) this.drawSchema(t, tl, p, stolen);
 
       // ---- следы лап ----
       if (fx.paws && tl >= p.tIn) this.drawPaws(p, tl);

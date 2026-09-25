@@ -518,6 +518,6 @@ class VeilBackground {
 }
 
 // доступно как обычный <script>: window.VeilBackground
-VeilBackground.VERSION = '21 — дополнения к схеме';
+VeilBackground.VERSION = '22 — схема сразу после пола, лишние дополнения убраны';
 window.VeilBackground = VeilBackground;
 window.VEIL_DEFAULTS = DEFAULTS;
