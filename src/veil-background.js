@@ -107,7 +107,7 @@ class VeilBackground {
     document.addEventListener('pointerout', this.onPointerOut);
     document.addEventListener('visibilitychange', this.onVisibility);
     this.themeObserver = new MutationObserver(this.onTheme);
-    this.themeObserver.observe(this.root, { attributes: true, attributeFilter: ['data-theme', 'class', 'style'] });
+    this.themeObserver.observe(this.root, { attributes: true, attributeFilter: ['data-theme', 'data-plain', 'class', 'style'] });
   }
 
   /* ---------- публичное API ---------- */
@@ -524,6 +524,6 @@ class VeilBackground {
 }
 
 // доступно как обычный <script>: window.VeilBackground
-VeilBackground.VERSION = '24 — фонарик виден всегда';
+VeilBackground.VERSION = '25 — тумблер сплошного фона';
 window.VeilBackground = VeilBackground;
 window.VEIL_DEFAULTS = DEFAULTS;
