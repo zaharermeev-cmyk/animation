@@ -20,16 +20,21 @@
       transition: background-color 0.6s ease, color 0.6s ease;
     }
 
-    /* текст, натянутый на плитки */
-    .tile-text {
-      width: 320px;
-      padding: 4px 6px;
+    /* объекты, стоящие на полу */
+    .stand {
+      width: 300px;
+      padding: 18px 20px;
       box-sizing: border-box;
+      border-radius: 14px;
+      background: color-mix(in srgb, var(--page-bg) 70%, transparent);
+      border: 1px solid color-mix(in srgb, var(--text) 14%, transparent);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
       pointer-events: none;
       will-change: transform, opacity;
     }
-    .tile-text h3 { margin: 0 0 4px; font-size: 18px; font-weight: 650; letter-spacing: -0.01em; }
-    .tile-text p { margin: 0; color: var(--text-muted); }
+    .stand h3 { margin: 0 0 6px; font-size: 20px; font-weight: 650; letter-spacing: -0.01em; }
+    .stand p { margin: 0; color: var(--text-muted); font-size: 15px; }
 
     .controls { position: fixed; top: 16px; right: 16px; z-index: 5; display: flex; gap: 8px; }
     .controls button {
@@ -43,21 +48,21 @@
 <body>
   <canvas class="veil-canvas" id="veil" aria-hidden="true"></canvas>
 
-  <div class="tile-text" id="t1">
-    <h3>Первый блок</h3>
-    <p>Две-три строки текста лежат прямо на плитках и появляются вместе с ними.</p>
+  <div class="stand" id="o1">
+    <h3>Объект 1</h3>
+    <p>Стоит на полу ближе всех. Две-три строки текста помещаются спокойно.</p>
   </div>
-  <div class="tile-text" id="t2">
-    <h3>Второй блок</h3>
-    <p>Перспектива берётся из той же сетки, поэтому текст «лежит» на поверхности.</p>
+  <div class="stand" id="o2">
+    <h3>Объект 2</h3>
+    <p>Масштаб зависит от глубины, под объектом — контактная тень.</p>
   </div>
-  <div class="tile-text" id="t3">
-    <h3>Третий блок</h3>
-    <p>Положение задаётся плитками: col, row и сколько плиток занимает блок.</p>
+  <div class="stand" id="o3">
+    <h3>Объект 3</h3>
+    <p>Дальше в глубину — меньше и выше к горизонту.</p>
   </div>
-  <div class="tile-text" id="t4">
-    <h3>Четвёртый блок</h3>
-    <p>Вуали проходят по центральной полосе и не мешают тексту в углах.</p>
+  <div class="stand" id="o4">
+    <h3>Объект 4</h3>
+    <p>Появляется, когда до его плитки доходит волна проявления.</p>
   </div>
 
   <div class="controls">
@@ -71,11 +76,11 @@
     const bg = new VeilBackground(document.getElementById('veil'));
     window.veil = bg;
 
-    // четыре свободные зоны: x, y, ширина — в долях экрана
-    bg.pinArea(document.getElementById('t1'), 0.17, 0.1, 0.23);
-    bg.pinArea(document.getElementById('t2'), 0.6, 0.1, 0.23);
-    bg.pinArea(document.getElementById('t3'), 0.17, 0.75, 0.23);
-    bg.pinArea(document.getElementById('t4'), 0.6, 0.75, 0.23);
+    // объекты на полу: col — плитка вбок от центра, row — ряд вглубь
+    bg.place(document.getElementById('o1'), { col: -5, row: 0, height: 0.55 });
+    bg.place(document.getElementById('o2'), { col: 4, row: 0, height: 0.55 });
+    bg.place(document.getElementById('o3'), { col: -7, row: 6, height: 0.55 });
+    bg.place(document.getElementById('o4'), { col: 6, row: 6, height: 0.55 });
 
     bg.start();
 

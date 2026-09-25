@@ -6,8 +6,9 @@
   --page-bg: #ffffff;
   --veil-a: #a8661c; /* тёплая нить (золото) */
   --veil-b: #2a489e; /* холодная нить (синяя) */
-  --veil-grid: rgba(30, 45, 85, 0.14);
+  --veil-grid: rgba(30, 45, 85, 0.22);
   --veil-glint: #d08a2a;
+  --veil-shadow: rgba(20, 30, 60, 0.28); /* тень под объектами */
   --veil-blend: normal; /* normal | lighter */
   --veil-intensity: 1;
   --text: #121826;
@@ -19,8 +20,9 @@
   --page-bg: #000000;
   --veil-a: #e8c690;
   --veil-b: #a3bcff;
-  --veil-grid: rgba(150, 170, 215, 0.14);
+  --veil-grid: rgba(150, 175, 225, 0.3);
   --veil-glint: #fff3da;
+  --veil-shadow: rgba(140, 170, 255, 0.35); /* свечение под объектами */
   --veil-blend: lighter;
   --veil-intensity: 1;
   --text: #eef1f8;
