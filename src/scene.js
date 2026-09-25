@@ -57,9 +57,14 @@
       this.bg = bg;
       this.enabled = options.enabled !== false;
       this.vis = this.enabled ? 1 : 0;
-      // сцена начинается, когда плитки почти проявились
+      // сцена начинается через 2 с после того, как плитки почти проявились
       const intro = bg.opts.intro;
-      this.start = options.start ?? intro.delay + intro.grid * 0.85;
+      this.start = options.start ?? intro.delay + intro.grid * 0.85 + 2;
+    }
+
+    /** Когда сцена закончилась (лиса скрылась) — по bg.clock. */
+    endTime() {
+      return this.start + 1.6 + T.foxGone;
     }
 
     setEnabled(on) {
@@ -337,7 +342,9 @@
     draw(pal, real) {
       const bg = this.bg;
       this.vis += clamp((this.enabled ? 1 : 0) - this.vis, -real / 0.5, real / 0.5);
-      if (this.vis <= 0) return;
+      // в финале цикла сцена тает быстрее плиток
+      this.alpha = this.vis * (1 - ease((bg.outro || 0) * 1.8));
+      if (this.alpha <= 0) return;
       const t = bg.clock - this.start;
       if (t <= 0) return;
 
@@ -346,7 +353,7 @@
       this.fill = `rgba(${pal.fill[0] | 0},${pal.fill[1] | 0},${pal.fill[2] | 0},1)`;
       c.save();
       c.globalCompositeOperation = 'source-over';
-      c.globalAlpha = this.vis;
+      c.globalAlpha = this.alpha;
       c.strokeStyle = this.ink;
       c.fillStyle = this.fill;
 
@@ -393,10 +400,10 @@
             if (top && n - 1 - i < stolen) continue;
             const a = top ? clamp(restore * STEAL - (i - (n - STEAL)), 0, 1) : 1;
             if (a <= 0) continue;
-            c.globalAlpha = this.vis * a;
+            c.globalAlpha = this.alpha * a;
             this.drawPileCoin(c, PILE_SLOTS[i][0], PILE_SLOTS[i][1]);
           }
-          c.globalAlpha = this.vis;
+          c.globalAlpha = this.alpha;
         });
       });
 
@@ -412,7 +419,7 @@
           g.addColorStop(1, `rgba(${pal.ink[0] | 0},${pal.ink[1] | 0},${pal.ink[2] | 0},0)`);
           c.save();
           c.globalCompositeOperation = 'lighter';
-          c.globalAlpha = this.vis * (rev - 0.5) * 2;
+          c.globalAlpha = this.alpha * (rev - 0.5) * 2;
           c.fillStyle = g;
           c.beginPath();
           c.moveTo(a[0], a[1]);
@@ -455,10 +462,10 @@
             const age = tl - T.foxAt - i * 0.1;
             if (age > 0.3) continue;
             const x = -0.15 - age * 0.9, y = 0.1 + age * 1.2;
-            c.globalAlpha = this.vis * (1 - age / 0.3);
+            c.globalAlpha = this.alpha * (1 - age / 0.3);
             this.drawCoinFlat(c, x, y, 0.04);
           }
-          c.globalAlpha = this.vis;
+          c.globalAlpha = this.alpha;
         });
       }
 
@@ -492,9 +499,9 @@
           const q = this.bg.project(x, 0, z);
           alpha = q ? clamp(1 - (q[2] - 8) / 16, 0, 1) * (1 - ease((k - 0.55) / 0.45)) : 0; // растворяется в бездне
         }
-        c.globalAlpha = this.vis * alpha;
+        c.globalAlpha = this.alpha * alpha;
         this.local(x, z, dir, (c) => this.drawFox(c, { gait, run, coin, wag: tl }));
-        c.globalAlpha = this.vis;
+        c.globalAlpha = this.alpha;
       }
 
       c.restore();

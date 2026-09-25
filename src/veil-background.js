@@ -30,6 +30,12 @@ const DEFAULTS = {
     delay: 0.5, // пустой экран, с
     grid: 2.8, // проявление плиток
   },
+  // после окончания сцены плитки пропадают и всё начинается заново
+  loop: true,
+  outro: {
+    duration: 2.8, // исчезновение плиток
+    pause: 0.8, // пустой экран перед повтором
+  },
 };
 
 const probe = document.createElement('canvas').getContext('2d');
@@ -230,7 +236,23 @@ class VeilBackground {
 
   gridReveal() {
     const { delay, grid } = this.opts.intro;
-    return smooth(clamp((this.clock - delay) / grid, 0, 1)) * 1.3;
+    const p = smooth(clamp((this.clock - delay) / grid, 0, 1)) * 1.3;
+    // финал: плитки пропадают от краёв к центру (интро наоборот)
+    return this.outro > 0 ? 1.3 * (1 - smooth(this.outro)) : p;
+  }
+
+  /** Прогресс финала 0..1 и перезапуск всего цикла. */
+  updateLoop() {
+    this.outro = 0;
+    const sc = this.scene;
+    if (!this.opts.loop || !sc || !sc.enabled) return;
+    const { duration, pause } = this.opts.outro;
+    const end = sc.endTime();
+    if (this.clock > end + duration + pause) {
+      this.clock = 0;
+      return;
+    }
+    this.outro = clamp((this.clock - end) / duration, 0, 1);
   }
 
   revealAlpha(r, p) {
@@ -261,6 +283,7 @@ class VeilBackground {
     ctx.globalAlpha = 1;
     ctx.clearRect(0, 0, W, H);
 
+    this.updateLoop();
     const p = this.gridReveal();
     if (this.opts.hills || this.opts.pit) this.drawGrid(pal, p);
     else this.drawFloor(pal, p);
@@ -466,6 +489,6 @@ class VeilBackground {
 }
 
 // доступно как обычный <script>: window.VeilBackground
-VeilBackground.VERSION = '12 — лиса убегает налево';
+VeilBackground.VERSION = '13 — шахтёр позже, плитки пропадают, цикл заново';
 window.VeilBackground = VeilBackground;
 window.VEIL_DEFAULTS = DEFAULTS;
