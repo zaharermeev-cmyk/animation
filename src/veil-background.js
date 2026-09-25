@@ -27,12 +27,14 @@ export const DEFAULTS = {
   strandOpacity: 1,
   // сетка
   cell: 0.5, // размер плитки
-  span: 34, // размер поля в мировых единицах
-  hills: 0.55, // высота волн
-  pit: 2.4, // глубина провала в центре
+  span: 44, // размер поля в мировых единицах
+  hills: 0, // высота волн (0 — ровный пол)
+  pit: 0, // глубина провала в центре (0 — без провала)
+  angle: 45, // поворот плиток, градусы (45 — ромбы, 0 — прямо)
+  fade: 1, // затухание пола вдали (0..1)
   gridOpacity: 1,
-  camHeight: 7,
-  camBack: 7,
+  camHeight: 5,
+  camBack: 9,
   fov: 1.0,
   // общее
   speed: 1,
@@ -336,7 +338,7 @@ export class VeilBackground {
     const px = parallax ? this.pointer.x : 0;
     const py = parallax ? this.pointer.y : 0;
     const eye = [
-      Math.sin(this.time * 0.07) * 0.4 + px * 0.5,
+      px * 0.4,
       camHeight + py * 0.3,
       -camBack,
     ];
@@ -434,7 +436,7 @@ export class VeilBackground {
     const size = (N + 1) * (N + 1) * 4;
     if (!this.gridPts || this.gridPts.length !== size) this.gridPts = new Float32Array(size);
     const P = this.gridPts;
-    const c45 = Math.SQRT1_2;
+    const ca = Math.cos((opts.angle * Math.PI) / 180), sa = Math.sin((opts.angle * Math.PI) / 180);
     const e = 0.05;
     const light = [-0.4, 0.8, -0.45];
 
@@ -442,8 +444,8 @@ export class VeilBackground {
       for (let i = 0; i <= N; i++) {
         const a = (i / N - 0.5) * span * Math.SQRT2;
         const b = (j / N - 0.5) * span * Math.SQRT2;
-        const x = (a - b) * c45;
-        const z = (a + b) * c45 + span * 0.12;
+        const x = a * ca - b * sa;
+        const z = a * sa + b * ca + span * 0.3;
         const y = this.surfaceY(x, z);
         const q = this.project(x, y, z);
         const idx = (j * (N + 1) + i) * 4;
@@ -457,13 +459,15 @@ export class VeilBackground {
         const ny = 2 * e;
         const nl = Math.hypot(nx, ny, nz);
         const lit = (nx * light[0] + ny * light[1] + nz * light[2]) / nl;
-        const shade = 0.35 + 0.9 * clamp(lit, 0, 1) ** 3;
+        const shade = opts.hills || opts.pit ? 0.35 + 0.9 * clamp(lit, 0, 1) ** 3 : 1;
         // виньетка к краям экрана
         const vig = 1 - 0.35 * clamp(q[3] * 1.2 - 0.3, 0, 1);
+        // пол растворяется вдали
+        const dist = 1 - opts.fade * clamp((q[2] - 5) / 17, 0, 1);
         P[idx] = q[0];
         P[idx + 1] = q[1];
         P[idx + 2] = this.revealAlpha(q[3], p);
-        P[idx + 3] = shade * vig;
+        P[idx + 3] = shade * vig * dist * dist;
       }
     }
 
