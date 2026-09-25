@@ -1,5 +1,6 @@
 /**
- * MinerScene — сцена на полу: шахтёр копает монеты, лиса ворует и убегает в бездну.
+ * MinerScene — сцена на полу: шахтёр долбит киркой землю возле своей кучки монет,
+ * прибегает лиса, ворует монеты и убегает в бездну.
  * Всё рисуется линиями одного цвета (--scene-ink) с заливкой цветом фона (--scene-fill),
  * поэтому сцена сама подстраивается под светлую и тёмную тему.
  *
@@ -21,7 +22,6 @@
     swing: 1.2, // один взмах кирки
     strike: 0.8, // момент удара внутри взмаха
     digUntil: 8.3, // шахтёр копает до
-    coinFlight: 0.55,
     foxIn: 5.8, // лиса выбегает
     foxAt: 8.2, // добегает до монет
     foxGrab: 8.9, // схватила — убегает
@@ -32,11 +32,15 @@
 
   // Расстановка на полу (мировые координаты)
   const Z = -4.9;
-  const MINER_X = 1.0;
-  const DIG_X = 1.62;
-  const PILE_X = 0.22;
+  const MINER_X = 3.2;
+  const DIG_X = MINER_X + 0.62; // куда бьёт кирка
+  const MOUND_X = MINER_X + 0.86; // центр кучи земли
+  const MOUND_SCALE = 2; // размер кучи земли
+  const PILE_X = MINER_X - 0.8;
+  const PILE_START = 7; // монет у шахтёра изначально
+  const STEAL = 3; // сколько монет утаскивает лиса
   const FOX_STOP_X = PILE_X - 0.62;
-  const FOX_START_X = -7;
+  const FOX_START_X = -5.5;
   const FOX_END = [-0.6, 26];
 
   // Места монет в кучке (локальные координаты относительно центра кучки)
@@ -361,26 +365,36 @@
         swing = rad(-65);
       }
 
-      const strikes = [];
-      for (let k = 0; ; k++) {
-        const ts = T.strike + k * T.swing;
-        if (ts >= T.digUntil) break;
-        strikes.push(ts);
-      }
-      const landed = tl < 0 ? 0 : strikes.filter((ts) => ts + T.coinFlight <= tl).length;
-      let pile = 1 + landed;
-      const stolen = tl >= T.foxAt ? Math.min(pile - 1, Math.floor((tl - T.foxAt) / 0.08)) : 0;
-      pile -= stolen;
+      // монеты в кучке: лиса утаскивает STEAL штук, в начале следующего цикла они
+      // тихо возвращаются (чтобы цикл замыкался)
+      const stolen = tl >= T.foxAt ? Math.min(STEAL, Math.floor((tl - T.foxAt) / 0.1) + 1) : 0;
+      const firstCycle = t - 1.6 < T.cycle;
+      const restore = tl >= 0 && tl < 1.5 && !firstCycle ? ease(tl / 1.5) : 1; // 0 → монет ещё нет
 
-      // ---- земля: холмик у места копки ----
-      this.local(DIG_X + 0.05, Z, 1, (c) => {
-        this.materialize(c, rev, 0.3, 0.35, () => this.drawMound(c, tl < 0 ? 0 : clamp(landed / 7, 0, 1)));
+      // ---- земля: куча у места копки ----
+      this.local(MOUND_X, Z, 1, (c) => {
+        this.materialize(c, rev, 0.3 * MOUND_SCALE, 0.35 * MOUND_SCALE, () => {
+          c.save();
+          c.scale(MOUND_SCALE, MOUND_SCALE);
+          c.lineWidth /= MOUND_SCALE;
+          this.drawMound(c, 0.5);
+          c.restore();
+        });
       });
 
       // ---- кучка монет ----
       this.local(PILE_X, Z, 1, (c) => {
         this.materialize(c, rev, 0.3, 0.35, () => {
-          for (let i = 0; i < Math.min(pile, PILE_SLOTS.length); i++) this.drawPileCoin(c, PILE_SLOTS[i][0], PILE_SLOTS[i][1]);
+          const n = Math.min(PILE_START, PILE_SLOTS.length);
+          for (let i = 0; i < n; i++) {
+            const top = i >= n - STEAL; // верхние монеты — те, что утащит лиса
+            if (top && n - 1 - i < stolen) continue;
+            const a = top ? clamp(restore * STEAL - (i - (n - STEAL)), 0, 1) : 1;
+            if (a <= 0) continue;
+            c.globalAlpha = this.vis * a;
+            this.drawPileCoin(c, PILE_SLOTS[i][0], PILE_SLOTS[i][1]);
+          }
+          c.globalAlpha = this.vis;
         });
       });
 
@@ -418,6 +432,7 @@
       // ---- комья земли при ударе ----
       if (strikeAge >= 0 && strikeAge < 0.4) {
         this.local(DIG_X, Z, 1, (c) => {
+          c.translate(0, 0.18);
           c.fillStyle = this.ink;
           for (let i = 0; i < 5; i++) {
             const vx = (i - 2) * 0.35, vy = 1.1 + (i % 2) * 0.4;
@@ -430,26 +445,12 @@
         });
       }
 
-      // ---- монеты в полёте: от места копки к кучке ----
-      for (const ts of strikes) {
-        const age = tl - ts;
-        if (age < 0 || age > T.coinFlight) continue;
-        const k = age / T.coinFlight;
-        const slot = PILE_SLOTS[Math.min(landed + 1, PILE_SLOTS.length - 1)];
-        const x = lerp(DIG_X, PILE_X + slot[0], k);
-        const y = lerp(0.05, slot[1] + 0.03, k) + Math.sin(Math.PI * k) * 1.35;
-        this.local(x, Z, 1, (c) => {
-          c.rotate(k * 9);
-          this.drawCoinFlat(c, 0, 0, 0.065);
-        }, y);
-      }
-
       // ---- искорки, когда лиса утаскивает монеты ----
       if (tl >= T.foxAt && tl < T.foxGrab + 0.3) {
         this.local(PILE_X, Z, 1, (c) => {
-          const n = Math.floor((tl - T.foxAt) / 0.08);
-          for (let i = Math.max(0, n - 3); i < n; i++) {
-            const age = tl - T.foxAt - i * 0.08;
+          const n = Math.min(STEAL, Math.floor((tl - T.foxAt) / 0.1) + 1);
+          for (let i = 0; i < n; i++) {
+            const age = tl - T.foxAt - i * 0.1;
             if (age > 0.3) continue;
             const x = -0.15 - age * 0.9, y = 0.1 + age * 1.2;
             c.globalAlpha = this.vis * (1 - age / 0.3);
