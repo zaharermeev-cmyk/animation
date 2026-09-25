@@ -1,0 +1,39 @@
+/* ===== Токены темы =====
+   Фон читает --veil-* из :root. Меняй цвета здесь — анимация подхватит сама. */
+
+:root {
+  /* светлая тема */
+  --page-bg: #ffffff;
+  --veil-a: #a8661c; /* тёплая нить (золото) */
+  --veil-b: #2a489e; /* холодная нить (синяя) */
+  --veil-grid: rgba(30, 45, 85, 0.14);
+  --veil-glint: #d08a2a;
+  --veil-blend: normal; /* normal | lighter */
+  --veil-intensity: 1;
+  --text: #121826;
+  --text-muted: #5b6478;
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  --page-bg: #000000;
+  --veil-a: #e8c690;
+  --veil-b: #a3bcff;
+  --veil-grid: rgba(150, 170, 215, 0.14);
+  --veil-glint: #fff3da;
+  --veil-blend: lighter;
+  --veil-intensity: 1;
+  --text: #eef1f8;
+  --text-muted: #8c93a6;
+  color-scheme: dark;
+}
+
+.veil-canvas {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  pointer-events: none;
+  display: block;
+}

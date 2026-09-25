@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="ru" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Veil Background</title>
+  <script>
+    try {
+      const t = localStorage.getItem('theme');
+      if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+    } catch (e) {}
+  </script>
+  <link rel="stylesheet" href="src/veil.css" />
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; }
+    body {
+      background: var(--page-bg);
+      color: var(--text);
+      font: 15px/1.45 Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+      transition: background-color 0.6s ease, color 0.6s ease;
+    }
+
+    /* текст, натянутый на плитки */
+    .tile-text {
+      width: 320px;
+      padding: 4px 6px;
+      box-sizing: border-box;
+      pointer-events: none;
+      will-change: transform, opacity;
+    }
+    .tile-text h3 { margin: 0 0 4px; font-size: 18px; font-weight: 650; letter-spacing: -0.01em; }
+    .tile-text p { margin: 0; color: var(--text-muted); }
+
+    .controls { position: fixed; top: 16px; right: 16px; z-index: 5; display: flex; gap: 8px; }
+    .controls button {
+      height: 32px; padding: 0 12px; border-radius: 16px; cursor: pointer;
+      font: inherit; font-size: 12px;
+      color: var(--text); background: transparent;
+      border: 1px solid color-mix(in srgb, var(--text) 20%, transparent);
+    }
+  </style>
+</head>
+<body>
+  <canvas class="veil-canvas" id="veil" aria-hidden="true"></canvas>
+
+  <div class="tile-text" id="t1">
+    <h3>Первый блок</h3>
+    <p>Две-три строки текста лежат прямо на плитках и появляются вместе с ними.</p>
+  </div>
+  <div class="tile-text" id="t2">
+    <h3>Второй блок</h3>
+    <p>Перспектива берётся из той же сетки, поэтому текст «лежит» на поверхности.</p>
+  </div>
+  <div class="tile-text" id="t3">
+    <h3>Третий блок</h3>
+    <p>Положение задаётся плитками: col, row и сколько плиток занимает блок.</p>
+  </div>
+  <div class="tile-text" id="t4">
+    <h3>Четвёртый блок</h3>
+    <p>Вуали проходят по центральной полосе и не мешают тексту в углах.</p>
+  </div>
+
+  <div class="controls">
+    <button id="replay">Повторить интро</button>
+    <button id="theme">Тема</button>
+  </div>
+
+  <script type="module">
+    import { VeilBackground } from './src/veil-background.js';
+
+    const bg = new VeilBackground(document.getElementById('veil'));
+    window.veil = bg;
+
+    // четыре свободные зоны: x, y, ширина — в долях экрана
+    bg.pinArea(document.getElementById('t1'), 0.17, 0.1, 0.23);
+    bg.pinArea(document.getElementById('t2'), 0.6, 0.1, 0.23);
+    bg.pinArea(document.getElementById('t3'), 0.17, 0.75, 0.23);
+    bg.pinArea(document.getElementById('t4'), 0.6, 0.75, 0.23);
+
+    bg.start();
+
+    document.getElementById('replay').onclick = () => bg.replay();
+    document.getElementById('theme').onclick = () => {
+      const root = document.documentElement;
+      const next = root.dataset.theme === 'dark' ? 'light' : 'dark';
+      root.dataset.theme = next;
+      try { localStorage.setItem('theme', next); } catch (e) {}
+    };
+  </script>
+</body>
+</html>
