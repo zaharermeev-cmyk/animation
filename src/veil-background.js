@@ -524,6 +524,6 @@ class VeilBackground {
 }
 
 // доступно как обычный <script>: window.VeilBackground
-VeilBackground.VERSION = '26 — чисто чёрный фон';
+VeilBackground.VERSION = '27 — все эффекты включены по умолчанию';
 window.VeilBackground = VeilBackground;
 window.VEIL_DEFAULTS = DEFAULTS;

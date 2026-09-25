@@ -152,7 +152,7 @@
     window.veil = bg;
     // эффекты: состояние тумблеров запоминается в браузере
     let saved = {};
-    try { saved = JSON.parse(localStorage.getItem('fx') || '{}'); } catch (e) {}
+    try { saved = JSON.parse(localStorage.getItem('fx2') || '{}'); } catch (e) {}
     bg.scene = new MinerScene(bg, { fx: saved });
     // лиса-логотип: в начале разлетается на плитки, в конце собирается обратно.
     // Если окно входа открыто — разлетается именно логотип из окна.
@@ -184,7 +184,7 @@
       box.checked = bg.scene.fx[key];
       box.onchange = () => {
         bg.scene.setFx(key, box.checked);
-        try { localStorage.setItem('fx', JSON.stringify(bg.scene.fx)); } catch (e) {}
+        try { localStorage.setItem('fx2', JSON.stringify(bg.scene.fx)); } catch (e) {}
         bg.restartScene(); // сразу показать сцену с этим эффектом с начала
       };
       fxPanel.append(row);

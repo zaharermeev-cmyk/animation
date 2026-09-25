@@ -86,7 +86,11 @@
       // сцена начинается через 2 с после того, как плитки почти проявились
       const intro = bg.opts.intro;
       this.start = options.start ?? intro.delay + intro.grid * 0.85 + 2;
-      this.fx = Object.fromEntries(FX.map(([k, , o = {}]) => [k, o.hidden ? true : !!(options.fx && options.fx[k])]));
+      // по умолчанию все эффекты включены; сохранённый выбор (true/false) имеет приоритет
+      this.fx = Object.fromEntries(FX.map(([k, , o = {}]) => {
+        const v = options.fx && options.fx[k];
+        return [k, o.hidden ? true : v === undefined ? true : !!v];
+      }));
       this.reset();
     }
 
