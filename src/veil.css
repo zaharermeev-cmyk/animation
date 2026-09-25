@@ -15,11 +15,11 @@
 }
 
 :root[data-theme='dark'] {
-  --page-bg: #03060c;
+  --page-bg: #000000; /* чистый чёрный */
   --veil-grid: rgba(222, 196, 150, 0.42);
   --veil-blend: lighter;
   --scene-ink: #e8ecf4;
-  --scene-fill: #03060c;
+  --scene-fill: #000000;
   --veil-intensity: 1;
   --text: #eef1f8;
   --text-muted: #8c93a6;

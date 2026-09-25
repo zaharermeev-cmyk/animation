@@ -8,7 +8,6 @@
     try {
       const t = localStorage.getItem('theme');
       if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
-      if (localStorage.getItem('plainBg') === '1') document.documentElement.dataset.plain = '1';
     } catch (e) {}
   </script>
   <script>
@@ -19,15 +18,11 @@
   <style>
     html, body { margin: 0; height: 100%; overflow: hidden; }
     body {
-      background: radial-gradient(ellipse at 50% 45%, color-mix(in srgb, var(--page-bg) 88%, #3a5a9a), var(--page-bg) 70%);
-      background-color: var(--page-bg);
+      background: var(--page-bg); /* сплошной фон, без градиента */
       color: var(--text);
       font: 15px/1.45 Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
       transition: background-color 0.6s ease, color 0.6s ease;
     }
-    /* тумблер «Сплошной фон»: без градиента, в тёмной теме — чистый чёрный */
-    :root[data-plain='1'] body { background: var(--page-bg); }
-    :root[data-plain='1'][data-theme='dark'] { --page-bg: #000; --scene-fill: #000; }
 
     .version { position: fixed; left: 12px; bottom: 10px; z-index: 5; font-size: 11px; color: var(--text-muted); opacity: 0.7; }
     .controls { position: fixed; top: 16px; right: 16px; z-index: 5; display: flex; gap: 8px; }
@@ -193,21 +188,6 @@
         bg.restartScene(); // сразу показать сцену с этим эффектом с начала
       };
       fxPanel.append(row);
-    }
-    // фон: градиент или сплошной (в тёмной теме — чистый чёрный)
-    {
-      const h = document.createElement('div');
-      h.className = 'fx-group';
-      h.textContent = 'Фон';
-      const row = document.createElement('label');
-      row.innerHTML = '<input type="checkbox"> <span>Сплошной, без градиента</span>';
-      const box = row.querySelector('input');
-      box.checked = document.documentElement.dataset.plain === '1';
-      box.onchange = () => {
-        document.documentElement.dataset.plain = box.checked ? '1' : '';
-        try { localStorage.setItem('plainBg', box.checked ? '1' : ''); } catch (e) {}
-      };
-      fxPanel.append(h, row);
     }
     document.getElementById('fxCollapse').onclick = (e) => {
       e.target.textContent = fxPanel.classList.toggle('collapsed') ? 'развернуть' : 'свернуть';
