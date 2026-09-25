@@ -76,10 +76,15 @@
       transition: opacity 0.4s ease;
     }
     .login.hidden { opacity: 0; pointer-events: none; }
-    .login-brand { display: flex; align-items: center; gap: 18px; margin-bottom: 30px; }
-    .login-brand img { width: 76px; height: 76px; object-fit: contain; }
+    /* как на живом сайте: логотип над заголовком */
+    .login-brand { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-bottom: 26px; }
+    .login-brand img { height: 132px; width: auto; display: block; }
+    /* логотип под тему: белая лиса — на тёмной, тёмная — на светлой */
+    .logo-light { display: none !important; }
+    :root:not([data-theme='dark']) .logo-dark { display: none !important; }
+    :root:not([data-theme='dark']) .logo-light { display: block !important; }
     .login-brand span {
-      font-size: 36px; font-weight: 800; letter-spacing: -0.01em; color: var(--login-title);
+      font-size: 34px; font-weight: 800; letter-spacing: -0.01em; line-height: 1.1; color: var(--login-title);
       transition: color 0.6s ease;
     }
     .login-card {
@@ -87,8 +92,8 @@
       background: var(--login-card); border: 1px solid var(--login-border); border-radius: 10px;
       transition: background-color 0.6s ease, border-color 0.6s ease;
     }
-    .login-card h1 { margin: 0 0 12px; font-size: 16px; font-weight: 600; color: var(--login-title); }
-    .login-card p { margin: 0 0 20px; font-size: 12.5px; color: var(--login-muted); }
+    .login-card h1 { margin: 0 0 8px; font-size: 16px; font-weight: 600; color: var(--login-title); }
+    .login-card p { margin: 0 0 22px; font-size: 12.5px; color: var(--login-muted); }
     .login-card label { display: block; margin-bottom: 16px; }
     .login-card label span { display: block; margin-bottom: 7px; font-size: 12px; color: var(--login-muted); }
     .login-card input {
@@ -97,7 +102,7 @@
       color: var(--login-title); font: inherit; font-size: 14px; outline: none;
       transition: background-color 0.6s ease, border-color 0.2s ease;
     }
-    .login-card input:focus { border-color: var(--login-btn); }
+    .login-card input:focus { border-color: var(--login-btn); box-shadow: 0 0 0 3px color-mix(in srgb, var(--login-btn) 25%, transparent); }
     .login-card button {
       width: 100%; height: 40px; margin-top: 2px; border: 0; border-radius: 8px; cursor: pointer;
       background: var(--login-btn); color: #fff; font: inherit; font-size: 13px; font-weight: 500;
@@ -109,7 +114,8 @@
 
   <div class="login hidden" id="login">
     <div class="login-brand">
-      <img src="logo.png" alt="" onerror="this.remove()" />
+      <img class="logo-dark" src="logo-dark-still.svg" alt="DT" />
+      <img class="logo-light" src="logo-light-still.svg" alt="DT" />
       <span>DT | DIAMOND TEAM</span>
     </div>
     <form class="login-card" onsubmit="return false">
