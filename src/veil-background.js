@@ -193,6 +193,8 @@ class VeilBackground {
       waterHi: parseColor(v('--veil-water-hi'), [235, 245, 255, 1]),
       grid: parseColor(v('--veil-grid'), [215, 190, 145, 0.4]),
       glint: parseColor(v('--veil-glint'), [255, 240, 210, 1]),
+      ink: parseColor(v('--scene-ink'), [235, 238, 245, 1]),
+      fill: parseColor(v('--scene-fill'), [3, 6, 12, 1]),
       additive: v('--veil-blend').trim() !== 'normal',
       intensity: parseFloat(v('--veil-intensity')) || 1,
     };
@@ -205,7 +207,7 @@ class VeilBackground {
     const { from, to } = tr;
     const dip = from.additive !== to.additive ? 1 - 0.85 * Math.sin(Math.PI * t) : 1;
     const out = { additive: t < 0.5 ? from.additive : to.additive, intensity: lerp(from.intensity, to.intensity, t) * dip };
-    for (const k of ['a', 'b', 'smoke', 'water', 'waterEdge', 'waterHi', 'grid', 'glint']) out[k] = mixColor(from[k], to[k], t);
+    for (const k of ['a', 'b', 'smoke', 'water', 'waterEdge', 'waterHi', 'grid', 'glint', 'ink', 'fill']) out[k] = mixColor(from[k], to[k], t);
     return out;
   }
 
@@ -450,7 +452,11 @@ class VeilBackground {
     const target = this.opts.veils ? 1 : 0;
     if (this.veilVis === undefined) this.veilVis = target;
     this.veilVis += clamp(target - this.veilVis, -real / 0.5, real / 0.5);
-    if (this.veilVis <= 0) return;
+    if (this.veilVis > 0) this.drawVeils(pal, dt);
+    if (this.scene) this.scene.draw(pal, real);
+  }
+
+  drawVeils(pal, dt) {
     this.drawSmoke(pal);
     this.computeWater();
     this.drawWaterBody(pal);
@@ -1018,6 +1024,6 @@ class VeilBackground {
 }
 
 // доступно как обычный <script>: window.VeilBackground
-VeilBackground.VERSION = '9 — кнопка окна входа';
+VeilBackground.VERSION = '10 — сцена: шахтёр и лиса';
 window.VeilBackground = VeilBackground;
 window.VEIL_DEFAULTS = DEFAULTS;

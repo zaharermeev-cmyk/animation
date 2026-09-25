@@ -13,6 +13,8 @@
   --veil-grid: rgba(120, 90, 45, 0.3); /* линии плиток */
   --veil-glint: #c9861f;
   --veil-blend: normal; /* normal | lighter */
+  --scene-ink: #111318; /* линии персонажей */
+  --scene-fill: #ffffff; /* заливка персонажей */
   --veil-intensity: 1;
   --text: #121826;
   --text-muted: #5b6478;
@@ -30,6 +32,8 @@
   --veil-grid: rgba(222, 196, 150, 0.42);
   --veil-glint: #fff1d6;
   --veil-blend: lighter;
+  --scene-ink: #e8ecf4;
+  --scene-fill: #03060c;
   --veil-intensity: 1;
   --text: #eef1f8;
   --text-muted: #8c93a6;

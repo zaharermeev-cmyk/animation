@@ -110,15 +110,20 @@
   <div class="controls">
     <button id="replay">Повторить интро</button>
     <button id="veils">Вуали: вкл</button>
+    <button id="sceneToggle">Сцена: вкл</button>
     <button id="loginToggle">Окно входа: выкл</button>
     <button id="theme">Тема</button>
   </div>
 
-  <script>document.write('<script src="src/veil-background.js?v=' + __v + '"><\/script>');</script>
+  <script>
+    document.write('<script src="src/veil-background.js?v=' + __v + '"><\/script>');
+    document.write('<script src="src/scene.js?v=' + __v + '"><\/script>');
+  </script>
   <script>
 
     const bg = new VeilBackground(document.getElementById('veil'));
     window.veil = bg;
+    bg.scene = new MinerScene(bg);
 
     document.getElementById('version').textContent = 'версия ' + VeilBackground.VERSION;
     bg.start();
@@ -126,6 +131,9 @@
     document.getElementById('replay').onclick = () => bg.replay();
     document.getElementById('veils').onclick = (e) => {
       e.target.textContent = 'Вуали: ' + (bg.toggleVeils() ? 'вкл' : 'выкл');
+    };
+    document.getElementById('sceneToggle').onclick = (e) => {
+      e.target.textContent = 'Сцена: ' + (bg.scene.toggle() ? 'вкл' : 'выкл');
     };
     document.getElementById('loginToggle').onclick = (e) => {
       const hidden = document.getElementById('login').classList.toggle('hidden');
