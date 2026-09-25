@@ -33,15 +33,84 @@
       color: var(--text); background: transparent;
       border: 1px solid color-mix(in srgb, var(--text) 20%, transparent);
     }
+
+    /* ===== окно входа в админку (накладывается поверх фона) ===== */
+    :root {
+      --login-card: #ffffff;
+      --login-border: #e6e8ec;
+      --login-input: #f7f8fa;
+      --login-input-border: #dcdfe5;
+      --login-title: #111318;
+      --login-muted: #4b5563;
+      --login-btn: #2f6bf5;
+    }
+    :root[data-theme='dark'] {
+      --login-card: #16171b;
+      --login-border: #25272d;
+      --login-input: #121317;
+      --login-input-border: #25272d;
+      --login-title: #f3f4f6;
+      --login-muted: #9ca3af;
+      --login-btn: #5b82f7;
+    }
+    .login {
+      position: fixed; inset: 0; z-index: 3;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      padding: 16px; box-sizing: border-box;
+      font-family: Inter, 'Segoe UI', system-ui, -apple-system, Roboto, sans-serif;
+      transition: opacity 0.4s ease;
+    }
+    .login.hidden { opacity: 0; pointer-events: none; }
+    .login-brand { display: flex; align-items: center; gap: 18px; margin-bottom: 30px; }
+    .login-brand img { width: 76px; height: 76px; object-fit: contain; }
+    .login-brand span {
+      font-size: 36px; font-weight: 800; letter-spacing: -0.01em; color: var(--login-title);
+      transition: color 0.6s ease;
+    }
+    .login-card {
+      width: min(380px, 100%); box-sizing: border-box; padding: 26px 22px 22px;
+      background: var(--login-card); border: 1px solid var(--login-border); border-radius: 10px;
+      transition: background-color 0.6s ease, border-color 0.6s ease;
+    }
+    .login-card h1 { margin: 0 0 12px; font-size: 16px; font-weight: 600; color: var(--login-title); }
+    .login-card p { margin: 0 0 20px; font-size: 12.5px; color: var(--login-muted); }
+    .login-card label { display: block; margin-bottom: 16px; }
+    .login-card label span { display: block; margin-bottom: 7px; font-size: 12px; color: var(--login-muted); }
+    .login-card input {
+      width: 100%; height: 40px; box-sizing: border-box; padding: 0 12px;
+      background: var(--login-input); border: 1px solid var(--login-input-border); border-radius: 8px;
+      color: var(--login-title); font: inherit; font-size: 14px; outline: none;
+      transition: background-color 0.6s ease, border-color 0.2s ease;
+    }
+    .login-card input:focus { border-color: var(--login-btn); }
+    .login-card button {
+      width: 100%; height: 40px; margin-top: 2px; border: 0; border-radius: 8px; cursor: pointer;
+      background: var(--login-btn); color: #fff; font: inherit; font-size: 13px; font-weight: 500;
+    }
   </style>
 </head>
 <body>
   <canvas class="veil-canvas" id="veil" aria-hidden="true"></canvas>
 
+  <div class="login hidden" id="login">
+    <div class="login-brand">
+      <img src="logo.png" alt="" onerror="this.remove()" />
+      <span>DT | DIAMOND TEAM</span>
+    </div>
+    <form class="login-card" onsubmit="return false">
+      <h1>Вход в панель</h1>
+      <p>Логин и пароль, затем код из приложения.</p>
+      <label><span>Логин</span><input autocomplete="off" /></label>
+      <label><span>Пароль</span><input type="password" autocomplete="off" /></label>
+      <button type="submit">Войти</button>
+    </form>
+  </div>
+
   <div class="version" id="version"></div>
   <div class="controls">
     <button id="replay">Повторить интро</button>
     <button id="veils">Вуали: вкл</button>
+    <button id="loginToggle">Окно входа: выкл</button>
     <button id="theme">Тема</button>
   </div>
 
@@ -57,6 +126,10 @@
     document.getElementById('replay').onclick = () => bg.replay();
     document.getElementById('veils').onclick = (e) => {
       e.target.textContent = 'Вуали: ' + (bg.toggleVeils() ? 'вкл' : 'выкл');
+    };
+    document.getElementById('loginToggle').onclick = (e) => {
+      const hidden = document.getElementById('login').classList.toggle('hidden');
+      e.target.textContent = 'Окно входа: ' + (hidden ? 'выкл' : 'вкл');
     };
     document.getElementById('theme').onclick = () => {
       const root = document.documentElement;

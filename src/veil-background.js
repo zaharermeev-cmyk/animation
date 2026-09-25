@@ -1018,6 +1018,6 @@ class VeilBackground {
 }
 
 // доступно как обычный <script>: window.VeilBackground
-VeilBackground.VERSION = '8 — вуали до края не доходят, кнопка вуалей, без объектов';
+VeilBackground.VERSION = '9 — кнопка окна входа';
 window.VeilBackground = VeilBackground;
 window.VEIL_DEFAULTS = DEFAULTS;
