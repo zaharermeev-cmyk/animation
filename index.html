@@ -10,7 +10,11 @@
       if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
     } catch (e) {}
   </script>
-  <link rel="stylesheet" href="src/veil.css" />
+  <script>
+    // всегда берём свежие файлы, а не закэшированные браузером / GitHub Pages
+    window.__v = Date.now();
+    document.write('<link rel="stylesheet" href="src/veil.css?v=' + __v + '">');
+  </script>
   <style>
     html, body { margin: 0; height: 100%; overflow: hidden; }
     body {
@@ -21,22 +25,7 @@
       transition: background-color 0.6s ease, color 0.6s ease;
     }
 
-    /* объекты, стоящие на полу */
-    .stand {
-      width: 300px;
-      padding: 18px 20px;
-      box-sizing: border-box;
-      border-radius: 14px;
-      background: color-mix(in srgb, var(--page-bg) 70%, transparent);
-      border: 1px solid color-mix(in srgb, var(--text) 14%, transparent);
-      backdrop-filter: blur(6px);
-      -webkit-backdrop-filter: blur(6px);
-      pointer-events: none;
-      will-change: transform, opacity;
-    }
-    .stand h3 { margin: 0 0 6px; font-size: 20px; font-weight: 650; letter-spacing: -0.01em; }
-    .stand p { margin: 0; color: var(--text-muted); font-size: 15px; }
-
+    .version { position: fixed; left: 12px; bottom: 10px; z-index: 5; font-size: 11px; color: var(--text-muted); opacity: 0.7; }
     .controls { position: fixed; top: 16px; right: 16px; z-index: 5; display: flex; gap: 8px; }
     .controls button {
       height: 32px; padding: 0 12px; border-radius: 16px; cursor: pointer;
@@ -49,54 +38,20 @@
 <body>
   <canvas class="veil-canvas" id="veil" aria-hidden="true"></canvas>
 
-  <div class="stand" id="o1">
-    <h3>Объект 1</h3>
-    <p>Стоит на полу ближе всех. Две-три строки текста помещаются спокойно.</p>
-  </div>
-  <div class="stand" id="o2">
-    <h3>Объект 2</h3>
-    <p>Масштаб зависит от глубины, под объектом — контактная тень.</p>
-  </div>
-  <div class="stand" id="o3">
-    <h3>Объект 3</h3>
-    <p>Дальше в глубину — меньше и выше к горизонту.</p>
-  </div>
-  <div class="stand" id="o4">
-    <h3>Объект 4</h3>
-    <p>Появляется, когда до его плитки доходит волна проявления.</p>
-  </div>
-
+  <div class="version" id="version"></div>
   <div class="controls">
     <button id="replay">Повторить интро</button>
-    <button id="objects">Объекты</button>
     <button id="veils">Вуали: вкл</button>
     <button id="theme">Тема</button>
   </div>
 
-  <script src="src/veil-background.js"></script>
+  <script>document.write('<script src="src/veil-background.js?v=' + __v + '"><\/script>');</script>
   <script>
 
     const bg = new VeilBackground(document.getElementById('veil'));
     window.veil = bg;
 
-    // объекты на поверхности (по умолчанию скрыты — кнопка «Объекты»)
-    const spots = [
-      ['o1', { x: -4.5, z: -3.5, height: 1.6 }],
-      ['o2', { x: 4.5, z: -3.5, height: 1.6 }],
-      ['o3', { x: -6, z: 3, height: 1.6 }],
-      ['o4', { x: 6, z: 3, height: 1.6 }],
-    ];
-    let shown = false;
-    const els = spots.map(([id]) => document.getElementById(id));
-    els.forEach((el) => (el.style.display = 'none'));
-    document.getElementById('objects').onclick = () => {
-      shown = !shown;
-      spots.forEach(([id, pos], i) => {
-        els[i].style.display = shown ? '' : 'none';
-        shown ? bg.place(els[i], pos) : bg.remove(els[i]);
-      });
-    };
-
+    document.getElementById('version').textContent = 'версия ' + VeilBackground.VERSION;
     bg.start();
 
     document.getElementById('replay').onclick = () => bg.replay();

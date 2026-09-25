@@ -4,7 +4,6 @@
  *    с провалом в центре и подсветкой складок;
  *  - вуали: мягкий дымчатый «шёлк», пучки волокон с огоньками на кончиках,
  *    свободные завитки и россыпь искр;
- *  - на поверхность можно ставить DOM-объекты (bg.place).
  *
  * Интро: пустой экран → от центра материализуется сетка → вырастают вуали.
  * Цвета — из CSS-переменных (--veil-*), фон подстраивается под тему.
@@ -101,7 +100,6 @@ class VeilBackground {
     this.running = false;
     this.raf = 0;
     this.pointer = { x: 0, y: 0, tx: 0, ty: 0 };
-    this.objects = [];
 
     this.reducedMq = matchMedia('(prefers-reduced-motion: reduce)');
     if (this.reducedMq.matches) this.clock = 1e3;
@@ -166,23 +164,6 @@ class VeilBackground {
     this.build();
   }
 
-  /**
-   * Поставить DOM-элемент на поверхность сетки.
-   *   { x, z }  — мировые координаты (x — вбок, z — вглубь, 0,0 — центр экрана)
-   *   height    — высота объекта в мировых единицах (плитка = opts.cell)
-   * Нижний центр элемента ставится в точку поверхности.
-   */
-  place(el, { x = 0, z = 0, height = 2, shadow = true } = {}) {
-    Object.assign(el.style, { position: 'fixed', left: '0', top: '0', transformOrigin: '0 0', margin: '0', opacity: '0' });
-    const obj = { el, x, z, height, shadow };
-    this.objects.push(obj);
-    return obj;
-  }
-
-  remove(el) {
-    this.objects = this.objects.filter((o) => o.el !== el);
-  }
-
   refreshTheme() {
     const to = this.readPalette();
     this.transition = { from: this.currentPalette(), to, t: 0 };
@@ -212,7 +193,6 @@ class VeilBackground {
       waterHi: parseColor(v('--veil-water-hi'), [235, 245, 255, 1]),
       grid: parseColor(v('--veil-grid'), [215, 190, 145, 0.4]),
       glint: parseColor(v('--veil-glint'), [255, 240, 210, 1]),
-      shadow: parseColor(v('--veil-shadow'), [120, 150, 220, 0.25]),
       additive: v('--veil-blend').trim() !== 'normal',
       intensity: parseFloat(v('--veil-intensity')) || 1,
     };
@@ -225,7 +205,7 @@ class VeilBackground {
     const { from, to } = tr;
     const dip = from.additive !== to.additive ? 1 - 0.85 * Math.sin(Math.PI * t) : 1;
     const out = { additive: t < 0.5 ? from.additive : to.additive, intensity: lerp(from.intensity, to.intensity, t) * dip };
-    for (const k of ['a', 'b', 'smoke', 'water', 'waterEdge', 'waterHi', 'grid', 'glint', 'shadow']) out[k] = mixColor(from[k], to[k], t);
+    for (const k of ['a', 'b', 'smoke', 'water', 'waterEdge', 'waterHi', 'grid', 'glint']) out[k] = mixColor(from[k], to[k], t);
     return out;
   }
 
@@ -368,9 +348,11 @@ class VeilBackground {
   }
 
   frame(now) {
-    const dt = Math.min(0.05, (now - this.last) / 1000);
+    // real — настоящее время (интро, вкл/выкл, смена темы идут с нормальной скоростью
+    // даже при низком FPS); dt — сглаженный шаг для движения
+    const real = Math.min(0.25, (now - this.last) / 1000);
     this.last = now;
-    this.draw(dt);
+    this.draw(Math.min(0.05, real), real);
     this.raf = requestAnimationFrame((t) => this.frame(t));
   }
 
@@ -440,13 +422,13 @@ class VeilBackground {
 
   /* ---------- кадр ---------- */
 
-  draw(dt) {
+  draw(dt, real = dt) {
     const { ctx, W, H } = this;
     this.time += dt * this.opts.speed;
-    this.clock += dt;
+    this.clock += real;
 
     if (this.transition) {
-      this.transition.t += dt / 0.7;
+      this.transition.t += real / 0.7;
       if (this.transition.t >= 1) this.transition = null;
     }
     const pal = this.currentPalette();
@@ -464,21 +446,16 @@ class VeilBackground {
     const p = this.gridReveal();
     if (this.opts.hills || this.opts.pit) this.drawGrid(pal, p);
     else this.drawFloor(pal, p);
-    this.drawShadows(pal, p);
     // плавное включение / выключение вуалей
     const target = this.opts.veils ? 1 : 0;
     if (this.veilVis === undefined) this.veilVis = target;
-    this.veilVis += clamp(target - this.veilVis, -dt / 0.6, dt / 0.6);
-    if (this.veilVis <= 0) {
-      this.updateObjects(p);
-      return;
-    }
+    this.veilVis += clamp(target - this.veilVis, -real / 0.5, real / 0.5);
+    if (this.veilVis <= 0) return;
     this.drawSmoke(pal);
     this.computeWater();
     this.drawWaterBody(pal);
     this.drawFibers(pal);
     this.drawGlints(pal, dt);
-    this.updateObjects(p);
   }
 
   /** Мировая точка → координаты камеры [xc, yc, zc]. */
@@ -1038,51 +1015,9 @@ class VeilBackground {
     this.ctx.globalCompositeOperation = 'source-over';
     this.ctx.restore();
   }
-
-  /* ---------- объекты ---------- */
-
-  drawShadows(pal, p) {
-    const { ctx } = this;
-    for (const o of this.objects) {
-      if (!o.shadow) continue;
-      const q = this.project(o.x, this.surfaceY(o.x, o.z), o.z);
-      if (!q) continue;
-      const a = clamp((p - q[3] - 0.05) / 0.2, 0, 1);
-      if (a <= 0) continue;
-      const s = (o.height * this.cam.F) / q[2] / o.el.offsetHeight;
-      const rx = o.el.offsetWidth * s * 0.6;
-      const ry = rx * 0.35;
-      ctx.save();
-      ctx.translate(q[0], q[1]);
-      ctx.scale(1, ry / rx);
-      const g = ctx.createRadialGradient(0, 0, 0, 0, 0, rx);
-      g.addColorStop(0, rgba(pal.shadow, a));
-      g.addColorStop(1, rgba(pal.shadow, 0));
-      ctx.fillStyle = g;
-      ctx.beginPath();
-      ctx.arc(0, 0, rx, 0, TAU);
-      ctx.fill();
-      ctx.restore();
-    }
-  }
-
-  updateObjects(p) {
-    for (const o of this.objects) {
-      const { el } = o;
-      const q = this.project(o.x, this.surfaceY(o.x, o.z), o.z);
-      if (!q) {
-        el.style.opacity = '0';
-        continue;
-      }
-      const w = el.offsetWidth, h = el.offsetHeight;
-      const s = (o.height * this.cam.F) / q[2] / h;
-      el.style.transform = `translate(${q[0] - (w * s) / 2}px, ${q[1] - h * s}px) scale(${s})`;
-      el.style.zIndex = String(1000 - Math.round(q[2] * 10));
-      el.style.opacity = clamp((p - q[3] - 0.05) / 0.2, 0, 1).toFixed(3);
-    }
-  }
 }
 
 // доступно как обычный <script>: window.VeilBackground
+VeilBackground.VERSION = '8 — вуали до края не доходят, кнопка вуалей, без объектов';
 window.VeilBackground = VeilBackground;
 window.VEIL_DEFAULTS = DEFAULTS;

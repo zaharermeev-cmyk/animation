@@ -12,7 +12,6 @@
   --veil-water-hi: #1f4f9e; /* блики */
   --veil-grid: rgba(120, 90, 45, 0.3); /* линии плиток */
   --veil-glint: #c9861f;
-  --veil-shadow: rgba(20, 30, 60, 0.28); /* тень под объектами */
   --veil-blend: normal; /* normal | lighter */
   --veil-intensity: 1;
   --text: #121826;
@@ -30,7 +29,6 @@
   --veil-water-hi: #e6f1ff;
   --veil-grid: rgba(222, 196, 150, 0.42);
   --veil-glint: #fff1d6;
-  --veil-shadow: rgba(140, 170, 255, 0.35); /* свечение под объектами */
   --veil-blend: lighter;
   --veil-intensity: 1;
   --text: #eef1f8;
