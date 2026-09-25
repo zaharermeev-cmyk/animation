@@ -88,11 +88,20 @@ class VeilBackground {
     this.onPointer = (e) => {
       this.pointer.tx = (e.clientX / innerWidth) * 2 - 1;
       this.pointer.ty = (e.clientY / innerHeight) * 2 - 1;
+      // координаты курсора в пикселях канваса (для «фонарика»)
+      const r = this.canvas.getBoundingClientRect();
+      this.pointer.px = e.clientX - r.left;
+      this.pointer.py = e.clientY - r.top;
+      this.pointer.active = true;
+    };
+    this.onPointerOut = (e) => {
+      if (!e.relatedTarget) this.pointer.active = false;
     };
     this.onTheme = () => requestAnimationFrame(() => this.refreshTheme());
 
     addEventListener('resize', this.onResize);
     addEventListener('pointermove', this.onPointer, { passive: true });
+    document.addEventListener('pointerout', this.onPointerOut);
     document.addEventListener('visibilitychange', this.onVisibility);
     this.themeObserver = new MutationObserver(this.onTheme);
     this.themeObserver.observe(this.root, { attributes: true, attributeFilter: ['data-theme', 'class', 'style'] });
@@ -121,6 +130,13 @@ class VeilBackground {
     this.clock = 0;
   }
 
+  /** Перезапустить только сцену (плитки остаются проявленными). */
+  restartScene() {
+    if (!this.scene) return this.replay();
+    this.clock = Math.max(this.scene.start, this.opts.intro.delay + this.opts.intro.grid) + 0.01;
+    this.scene.reset();
+  }
+
   configure(options) {
     Object.assign(this.opts, options);
   }
@@ -136,6 +152,7 @@ class VeilBackground {
     this.pause();
     removeEventListener('resize', this.onResize);
     removeEventListener('pointermove', this.onPointer);
+    document.removeEventListener('pointerout', this.onPointerOut);
     document.removeEventListener('visibilitychange', this.onVisibility);
     this.themeObserver.disconnect();
   }
@@ -489,6 +506,6 @@ class VeilBackground {
 }
 
 // доступно как обычный <script>: window.VeilBackground
-VeilBackground.VERSION = '13 — шахтёр позже, плитки пропадают, цикл заново';
+VeilBackground.VERSION = '14 — эффекты с тумблерами';
 window.VeilBackground = VeilBackground;
 window.VEIL_DEFAULTS = DEFAULTS;

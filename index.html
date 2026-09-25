@@ -34,6 +34,21 @@
       border: 1px solid color-mix(in srgb, var(--text) 20%, transparent);
     }
 
+    /* ===== панель эффектов ===== */
+    .fx {
+      position: fixed; top: 60px; right: 16px; z-index: 5; width: 220px;
+      padding: 12px 14px; border-radius: 12px; font-size: 12.5px;
+      background: color-mix(in srgb, var(--page-bg) 80%, transparent);
+      border: 1px solid color-mix(in srgb, var(--text) 16%, transparent);
+      backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    }
+    .fx-title { display: flex; justify-content: space-between; align-items: center; font-weight: 600; margin-bottom: 8px; }
+    .fx-title button { all: unset; cursor: pointer; font-size: 11px; color: var(--text-muted); }
+    .fx label { display: flex; align-items: center; gap: 8px; padding: 4px 0; cursor: pointer; color: var(--text); }
+    .fx input { accent-color: #5b82f7; }
+    .fx.collapsed label { display: none; }
+    .fx.collapsed .fx-title { margin-bottom: 0; }
+
     /* ===== окно входа в админку (накладывается поверх фона) ===== */
     :root {
       --login-card: #ffffff;
@@ -106,6 +121,10 @@
     </form>
   </div>
 
+  <div class="fx" id="fx">
+    <div class="fx-title"><span>Эффекты</span><button id="fxCollapse">свернуть</button></div>
+  </div>
+
   <div class="version" id="version"></div>
   <div class="controls">
     <button id="replay">Повторить интро</button>
@@ -122,7 +141,28 @@
 
     const bg = new VeilBackground(document.getElementById('veil'));
     window.veil = bg;
-    bg.scene = new MinerScene(bg);
+    // эффекты: состояние тумблеров запоминается в браузере
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem('fx') || '{}'); } catch (e) {}
+    bg.scene = new MinerScene(bg, { fx: saved });
+
+    const fxPanel = document.getElementById('fx');
+    for (const [key, label] of MinerScene.FX) {
+      const row = document.createElement('label');
+      row.innerHTML = '<input type="checkbox"> <span></span>';
+      row.querySelector('span').textContent = label;
+      const box = row.querySelector('input');
+      box.checked = bg.scene.fx[key];
+      box.onchange = () => {
+        bg.scene.setFx(key, box.checked);
+        try { localStorage.setItem('fx', JSON.stringify(bg.scene.fx)); } catch (e) {}
+        bg.restartScene(); // сразу показать сцену с этим эффектом с начала
+      };
+      fxPanel.append(row);
+    }
+    document.getElementById('fxCollapse').onclick = (e) => {
+      e.target.textContent = fxPanel.classList.toggle('collapsed') ? 'развернуть' : 'свернуть';
+    };
 
     document.getElementById('version').textContent = 'версия ' + VeilBackground.VERSION;
     bg.start();

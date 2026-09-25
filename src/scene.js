@@ -4,9 +4,20 @@
  * Всё рисуется линиями одного цвета (--scene-ink) с заливкой цветом фона (--scene-fill),
  * поэтому сцена сама подстраивается под светлую и тёмную тему.
  *
+ * Дополнительные эффекты включаются тумблерами (scene.fx[ключ] = true):
+ *   paws       — светящиеся следы лап
+ *   spot       — прожектор охраны (лиса замирает, когда луч рядом)
+ *   schema     — «схема» на плитках: узлы, связи, монеты бегут по маршрутам
+ *   safe       — сейф вместо кучки: лиса крутит код, дверца открывается
+ *   sack       — лиса уносит мешок с дыркой, за ней дорожка из монет
+ *   guard      — спящий охранник, лиса крадётся мимо на цыпочках
+ *   flashlight — курсор-фонарик: наведи на лису — испугается и убежит
+ *   finale     — в конце монеты собираются в маску вора
+ *   lasers     — лазерная сигнализация, лиса перепрыгивает лучи
+ *
  * Подключение:
  *   const bg = new VeilBackground(canvas);
- *   bg.scene = new MinerScene(bg);
+ *   bg.scene = new MinerScene(bg, { fx: { paws: true } });
  */
 (function () {
   const TAU = Math.PI * 2;
@@ -16,18 +27,29 @@
   const ease = (t) => smooth(clamp(t, 0, 1));
   const rad = (d) => (d * Math.PI) / 180;
 
-  // Сценарий одного цикла (секунды от начала цикла)
+  const FX = [
+    ['paws', 'Следы лап'],
+    ['spot', 'Прожектор охраны'],
+    ['schema', 'Схема на плитках'],
+    ['safe', 'Сейф вместо кучки'],
+    ['sack', 'Мешок с дыркой'],
+    ['guard', 'Спящий охранник'],
+    ['lasers', 'Лазеры'],
+    ['flashlight', 'Курсор-фонарик'],
+    ['finale', 'Финал: маска из монет'],
+  ];
+
+  // Базовые тайминги (секунды от начала цикла)
   const T = {
-    cycle: 12,
     swing: 1.2, // один взмах кирки
     strike: 0.8, // момент удара внутри взмаха
-    digUntil: 8.3, // шахтёр копает до
     foxIn: 5.8, // лиса выбегает
-    foxAt: 8.2, // добегает до монет
-    foxGrab: 8.9, // схватила — убегает
-    foxGone: 12,
-    noticeFrom: 8.5, // шахтёр замечает
-    noticeTo: 11.4,
+    foxInSafe: 4.4, // с сейфом — раньше, чтобы успеть взломать
+    grab: 0.7, // сколько лиса хватает монеты
+    crack: 1.4, // взлом сейфа
+    doorOpen: 0.4,
+    escape: 3.1, // бегство до полного исчезновения
+    finale: 2.8,
   };
 
   // Расстановка на полу (мировые координаты)
@@ -41,9 +63,17 @@
   const STEAL = 3; // сколько монет утаскивает лиса
   const FOX_STOP_X = PILE_X - 0.62;
   const FOX_START_X = -5.5;
+  const FOX_SPEED = 3.0;
   // путь бегства: сначала влево вдоль переднего края (под окном входа), потом влево вглубь
   const FOX_BEND = [-5.5, Z - 1];
   const FOX_END = [-11, 6];
+  const GUARD = [-3.2, Z + 1.3]; // спящий охранник
+  const LASERS = [-1.0, 0.6]; // x лазерных лучей поперёк пути лисы
+  const SCARE_RADIUS = 110; // px — насколько близко навести фонарик
+
+  // «Схема» на плитках: узлы и связи (по бокам, чтобы не прятаться за окном входа)
+  const NODES = [[-8.5, 0.5], [-6, 3.5], [-9.5, 6.5], [-5.5, 8.5], [6.5, 1.5], [9, 4.5], [5.5, 6], [8, 9]];
+  const EDGES = [[0, 1], [1, 2], [1, 3], [2, 3], [4, 5], [4, 6], [5, 7], [6, 7], [3, 6]];
 
   // Места монет в кучке (локальные координаты относительно центра кучки)
   const PILE_SLOTS = [
@@ -51,6 +81,33 @@
     [-0.31, 0.0], [0.31, 0], [0, 0.14], [-0.2, 0.07], [0.2, 0.07],
     [-0.1, 0.14], [0.1, 0.14], [0, 0.21],
   ];
+
+  /** Точки контура маски вора (в единицах: ширина маски ≈ 2). */
+  function maskPoints() {
+    const pts = [];
+    const N = 22;
+    // верхний край ленты
+    for (let i = 0; i <= N; i++) {
+      const t = i / N, x = lerp(-1, 1, t);
+      pts.push([x, -0.28 * Math.sin(Math.PI * t) + 0.05]);
+    }
+    // нижний край с выемкой под нос
+    for (let i = 1; i < N; i++) {
+      const t = i / N, x = lerp(1, -1, t);
+      pts.push([x, 0.34 * Math.sin(Math.PI * t) + 0.05 - 0.2 * Math.exp(-(x * x) / 0.03)]);
+    }
+    // прорези для глаз
+    for (const sx of [-1, 1]) {
+      for (let i = 0; i < 9; i++) {
+        const a = (i / 9) * TAU;
+        pts.push([sx * 0.45 + Math.cos(a) * 0.22, 0.02 + Math.sin(a) * 0.1]);
+      }
+    }
+    // завязки
+    for (const [dx, dy] of [[-1.15, -0.12], [-1.3, -0.2], [-1.15, 0.2], [-1.28, 0.3]]) pts.push([dx, dy]);
+    return pts;
+  }
+  const MASK = maskPoints();
 
   class MinerScene {
     constructor(bg, options = {}) {
@@ -60,11 +117,24 @@
       // сцена начинается через 2 с после того, как плитки почти проявились
       const intro = bg.opts.intro;
       this.start = options.start ?? intro.delay + intro.grid * 0.85 + 2;
+      this.fx = Object.fromEntries(FX.map(([k]) => [k, !!(options.fx && options.fx[k])]));
+      this.reset();
     }
 
-    /** Когда сцена закончилась (лиса скрылась) — по bg.clock. */
+    reset() {
+      this.scaredAt = null;
+      this.cycleIdx = -1;
+      this._planKey = null;
+    }
+
+    setFx(key, on) {
+      this.fx[key] = !!on;
+      this._planKey = null;
+    }
+
+    /** Когда сцена закончилась — по bg.clock. */
     endTime() {
-      return this.start + 1.6 + T.foxGone;
+      return this.start + 1.6 + this.plan().end;
     }
 
     setEnabled(on) {
@@ -74,6 +144,88 @@
     toggle() {
       this.enabled = !this.enabled;
       return this.enabled;
+    }
+
+    /* ---------- таймлайн ---------- */
+
+    /** Положение прожектора на полу во время цикла tl. */
+    spotAt(tl) {
+      return [-1.2 + 4.4 * Math.sin(tl * 0.55 + 1.2), Z + 0.9 + 0.9 * Math.sin(tl * 0.37 + 0.4)];
+    }
+
+    /**
+     * План цикла: когда лиса приходит, взламывает, хватает, убегает и т. д.
+     * Зависит от включённых эффектов и от того, пугали ли лису фонариком.
+     */
+    plan() {
+      const key = JSON.stringify(this.fx) + '|' + this.scaredAt;
+      if (key === this._planKey) return this._plan;
+      const fx = this.fx;
+      const dt = 1 / 60;
+      const tIn = fx.safe ? T.foxInSafe : T.foxIn;
+      // проход лисы к монетам: интегрируем скорость (на цыпочках у охранника, замирает под прожектором)
+      const xs = [], modes = [];
+      let x = FOX_START_X, t = tIn, frozen = 0;
+      while (x < FOX_STOP_X - 1e-3 && t < tIn + 15) {
+        let v = FOX_SPEED * clamp((FOX_STOP_X - x) / 0.7, 0.2, 1);
+        let mode = 0;
+        if (fx.guard && Math.abs(x - GUARD[0]) < 1.4) (v = Math.min(v, 1.0)), (mode = 1);
+        if (fx.spot && frozen < 2.2) {
+          const [sx, sz] = this.spotAt(t);
+          if (Math.hypot(sx - x, sz - Z) < 1.3) (v = 0), (mode = 2), (frozen += dt);
+        }
+        xs.push(x);
+        modes.push(mode);
+        x = Math.min(FOX_STOP_X, x + v * dt);
+        t += dt;
+      }
+      xs.push(FOX_STOP_X);
+      modes.push(0);
+      const arrive = t;
+      const crackEnd = arrive + (fx.safe ? T.crack : 0);
+      const grabStart = crackEnd + (fx.safe ? T.doorOpen : 0);
+      const grabEnd = grabStart + T.grab;
+      const scared = this.scaredAt != null && this.scaredAt < grabEnd ? this.scaredAt : null;
+      const escStart = scared ?? grabEnd;
+      const escEnd = escStart + T.escape;
+      // с сейфом шахтёр замечает, только когда лиса уже тащит монеты
+      const noticeFrom = scared != null ? scared : (fx.safe ? grabStart : arrive) + 0.3;
+      const p = {
+        tIn, dt, xs, modes, arrive, crackEnd, grabStart, grabEnd, scared, escStart, escEnd,
+        noticeFrom,
+        noticeTo: escStart + 2.6,
+        digUntil: noticeFrom - 0.1,
+        finaleStart: escEnd + 0.1,
+      };
+      p.end = fx.finale ? p.finaleStart + T.finale : escEnd;
+      this._planKey = key;
+      this._plan = p;
+      return p;
+    }
+
+    /** Положение лисы на пути к монетам. */
+    entryAt(p, tl) {
+      const i = clamp(Math.floor((tl - p.tIn) / p.dt), 0, p.xs.length - 1);
+      return { x: p.xs[i], mode: p.modes[i], moving: i < p.xs.length - 1 && p.modes[i] !== 2 };
+    }
+
+    /** Положение лисы при бегстве (k = 0..1). */
+    escapeAt(p, k) {
+      const x0 = p.scared != null ? this.entryAt(p, p.scared).x : FOX_STOP_X;
+      const e = Math.pow(clamp(k, 0, 1), 1.25), u = 1 - e;
+      const bend = [Math.min(FOX_BEND[0], x0 - 1.5), FOX_BEND[1]];
+      return [u * u * x0 + 2 * u * e * bend[0] + e * e * FOX_END[0], u * u * Z + 2 * u * e * bend[1] + e * e * FOX_END[1]];
+    }
+
+    /** Прыжок через лазер: высота над полом. */
+    hopAt(x, z) {
+      if (!this.fx.lasers || Math.abs(z - Z) > 0.7) return 0;
+      let h = 0;
+      for (const lx of LASERS) {
+        const d = Math.abs(x - lx);
+        if (d < 0.4) h = Math.max(h, 0.32 * Math.cos((d / 0.4) * (Math.PI / 2)));
+      }
+      return h;
     }
 
     /* ---------- помощники ---------- */
@@ -106,6 +258,11 @@
       draw(c);
       if (fill) c.fill();
       c.stroke();
+    }
+
+    inkA(a) {
+      const k = this.pal.ink;
+      return `rgba(${k[0] | 0},${k[1] | 0},${k[2] | 0},${clamp(a, 0, 1).toFixed(3)})`;
     }
 
     /** Эффект материализации: видна только часть снизу до h, по краю — светящаяся линия. */
@@ -183,10 +340,8 @@
       const g1 = [sh[0] + dir[0] * 0.3, sh[1] + dir[1] * 0.3];
       const g2 = [g1[0] - dir[0] * 0.1, g1[1] - dir[1] * 0.1];
       const tip = [g1[0] + dir[0] * 0.42, g1[1] + dir[1] * 0.42];
-      // рукоять
       c.lineWidth = 0.028;
       this.line(c, [g2[0] - dir[0] * 0.04, g2[1] - dir[1] * 0.04, tip[0], tip[1]]);
-      // головка кирки — дуга поперёк рукояти
       const nx = -dir[1], ny = dir[0];
       c.lineWidth = 0.036;
       c.beginPath();
@@ -194,7 +349,6 @@
       c.quadraticCurveTo(tip[0] + dir[0] * 0.05, tip[1] + dir[1] * 0.05, tip[0] - nx * 0.19 - dir[0] * 0.05, tip[1] - ny * 0.19 - dir[1] * 0.05);
       c.stroke();
       c.lineWidth = 0.032;
-      // руки: плечо → локоть → кисть
       for (const [g, off] of [[g1, 0.05], [g2, -0.04]]) {
         const ex = (sh[0] + g[0]) / 2 + off, ey = (sh[1] + g[1]) / 2 - 0.08;
         this.line(c, [sh[0], sh[1], ex, ey, g[0], g[1]]);
@@ -208,21 +362,32 @@
     }
 
     drawFox(c, pose) {
-      const { gait, run, coin, wag } = pose;
-      const bob = run ? Math.abs(Math.sin(gait)) * 0.035 : 0;
+      const { gait, run, coin, wag, crouch, hop, paw, sack, tiptoe } = pose;
+      const bob = run && !hop ? Math.abs(Math.sin(gait)) * (tiptoe ? 0.015 : 0.035) : 0;
       c.save();
-      c.translate(0, bob);
+      c.translate(0, bob - (crouch ? 0.06 : 0));
 
-      // лапы: передние и задние, в противофазе
+      // лапы: передние и задние, в противофазе; в прыжке — поджаты
       const legs = [[0.16, 0], [0.11, Math.PI], [-0.15, Math.PI * 0.5], [-0.2, Math.PI * 1.5]];
-      for (const [x, ph] of legs) {
+      legs.forEach(([x, ph], i) => {
+        if (hop) {
+          const fwd = i < 2 ? 0.1 : -0.1;
+          this.line(c, [x, 0.22, x + fwd, 0.14, x + fwd * 1.4, 0.1]);
+          return;
+        }
+        if (paw && i === 0) {
+          // лапа поднята к кодовому замку
+          this.line(c, [x, 0.22, x + 0.1, 0.3, x + 0.2, 0.34 + Math.sin(wag * 12) * 0.02]);
+          return;
+        }
         const sw = run ? Math.sin(gait + ph) : 0;
-        const lift = run ? Math.max(0, Math.cos(gait + ph)) * 0.05 : 0;
-        this.line(c, [x, 0.22, x + sw * 0.07, 0.1 + lift, x + sw * 0.1 + 0.02, 0.01 + lift]);
-      }
+        const lift = run ? Math.max(0, Math.cos(gait + ph)) * (tiptoe ? 0.1 : 0.05) : 0;
+        const bend = crouch ? 0.05 : 0;
+        this.line(c, [x, 0.22, x + sw * 0.07 + bend, 0.1 + lift, x + sw * 0.1 + 0.02, 0.01 + lift]);
+      });
 
       // хвост — пушистый, с белым кончиком
-      const ta = (run ? Math.sin(gait * 0.5) * 0.12 : Math.sin(wag * 9) * 0.25) + 0.15;
+      const ta = (run ? Math.sin(gait * 0.5) * 0.12 : Math.sin(wag * 9) * 0.25) + (crouch ? -0.2 : 0.15);
       c.save();
       c.translate(-0.24, 0.3);
       c.rotate(ta);
@@ -238,13 +403,36 @@
       // тело
       this.shape(c, (c) => c.ellipse(0, 0.28, 0.27, 0.1, 0, 0, TAU));
 
+      // мешок на спине
+      if (sack) {
+        c.save();
+        c.translate(-0.04, 0.4);
+        c.rotate(run ? Math.sin(gait) * 0.08 : 0);
+        this.shape(c, (c) => {
+          c.moveTo(-0.08, 0.02);
+          c.bezierCurveTo(-0.2, 0.05, -0.18, 0.28, 0, 0.26);
+          c.bezierCurveTo(0.18, 0.28, 0.2, 0.05, 0.08, 0.02);
+          c.closePath();
+        });
+        this.line(c, [-0.05, 0.25, 0, 0.3, 0.05, 0.25]); // завязка
+        // значок $
+        c.lineWidth = 0.018;
+        c.beginPath();
+        c.moveTo(0.04, 0.17);
+        c.bezierCurveTo(-0.05, 0.19, -0.05, 0.12, 0, 0.12);
+        c.bezierCurveTo(0.05, 0.12, 0.05, 0.05, -0.04, 0.07);
+        c.stroke();
+        this.line(c, [0, 0.03, 0, 0.21]);
+        c.restore();
+      }
+
       // голова
-      const hx = 0.3, hy = 0.38;
+      const hx = 0.3, hy = crouch ? 0.33 : 0.38;
       this.shape(c, (c) => {
         c.moveTo(hx - 0.09, hy + 0.05);
-        c.lineTo(hx - 0.06, hy + 0.2); // ухо
+        c.lineTo(hx - 0.06, hy + (crouch ? 0.14 : 0.2)); // ухо
         c.lineTo(hx - 0.0, hy + 0.08);
-        c.lineTo(hx + 0.05, hy + 0.19); // ухо
+        c.lineTo(hx + 0.05, hy + (crouch ? 0.13 : 0.19)); // ухо
         c.lineTo(hx + 0.08, hy + 0.05);
         c.quadraticCurveTo(hx + 0.12, hy + 0.01, hx + 0.2, hy - 0.03); // морда
         c.quadraticCurveTo(hx + 0.12, hy - 0.09, hx - 0.02, hy - 0.08);
@@ -262,21 +450,117 @@
       c.fill();
       this.line(c, [hx - 0.1, hy + 0.01, hx - 0.17, hy + 0.05]);
       this.line(c, [hx - 0.1, hy, hx - 0.17, hy - 0.03]);
-      // глаз в маске
       c.fillStyle = this.fill;
       c.beginPath();
       c.arc(hx + 0.05, hy + 0.003, 0.018, 0, TAU);
       c.fill();
       c.fillStyle = this.ink;
-      // нос
       c.beginPath();
       c.arc(hx + 0.2, hy - 0.03, 0.02, 0, TAU);
       c.fill();
       c.fillStyle = this.fill;
 
-      // монета в зубах
       if (coin) this.drawCoinFlat(c, hx + 0.19, hy - 0.1, 0.065);
       c.restore();
+    }
+
+    drawGuard(c, t) {
+      // стул
+      this.line(c, [-0.18, 0, -0.16, 0.42]);
+      this.line(c, [0.16, 0, 0.14, 0.42]);
+      this.line(c, [-0.2, 0.42, 0.18, 0.42]);
+      this.line(c, [-0.18, 0.42, -0.22, 0.95]);
+      // ноги сидящего
+      this.line(c, [-0.02, 0.46, 0.22, 0.46, 0.24, 0.03]);
+      this.line(c, [-0.06, 0.44, 0.17, 0.44, 0.18, 0.03]);
+      c.fillStyle = this.ink;
+      for (const x of [0.28, 0.22]) {
+        c.beginPath();
+        c.ellipse(x, 0.025, 0.06, 0.026, 0, 0, TAU);
+        c.fill();
+      }
+      c.fillStyle = this.fill;
+      // туловище, откинулся на спинку
+      const breathe = Math.sin(t * 1.6) * 0.012;
+      this.shape(c, (c) => c.roundRect(-0.17, 0.44, 0.24, 0.4 + breathe, 0.07));
+      // руки сложены на животе
+      this.line(c, [-0.05, 0.78, 0.08, 0.64, -0.08, 0.6]);
+      // голова свесилась набок
+      const hx = 0.02, hy = 0.98 + breathe;
+      this.shape(c, (c) => c.arc(hx, hy, 0.1, 0, TAU));
+      // закрытые глаза и фуражка
+      this.line(c, [hx + 0.03, hy, hx + 0.08, hy - 0.01]);
+      c.fillStyle = this.ink;
+      c.beginPath();
+      c.moveTo(hx - 0.12, hy + 0.05);
+      c.lineTo(hx + 0.1, hy + 0.08);
+      c.lineTo(hx + 0.18, hy + 0.04);
+      c.lineTo(hx + 0.08, hy + 0.14);
+      c.lineTo(hx - 0.1, hy + 0.12);
+      c.closePath();
+      c.fill();
+      c.fillStyle = this.fill;
+      // Zzz
+      for (let i = 0; i < 3; i++) {
+        const k = (t * 0.45 + i / 3) % 1;
+        const zx = hx + 0.15 + k * 0.25, zy = hy + 0.15 + k * 0.45, s = 0.05 + k * 0.05;
+        c.save();
+        c.globalAlpha *= Math.sin(Math.PI * k);
+        c.lineWidth = 0.022;
+        this.line(c, [zx, zy + s, zx + s, zy + s, zx, zy, zx + s, zy]);
+        c.restore();
+      }
+    }
+
+    drawSafe(c, open, dial, coinsLeft, t) {
+      // корпус
+      this.shape(c, (c) => c.roundRect(-0.28, 0.04, 0.56, 0.58, 0.04));
+      this.line(c, [-0.22, 0.04, -0.22, 0]);
+      this.line(c, [0.22, 0.04, 0.22, 0]);
+      // внутренность (видна, когда дверца открыта)
+      const ix = -0.22, iy = 0.1, iw = 0.44, ih = 0.46;
+      if (open > 0) {
+        c.fillStyle = this.inkA(0.18);
+        c.fillRect(ix, iy, iw, ih);
+        c.fillStyle = this.fill;
+        this.line(c, [ix, iy + ih * 0.5, ix + iw, iy + ih * 0.5]);
+        for (let i = 0; i < coinsLeft; i++) this.drawPileCoin(c, -0.1 + i * 0.1, iy + 0.02);
+      }
+      // дверца на петлях слева
+      const cosA = Math.cos(open * rad(115));
+      const dw = iw * cosA;
+      c.save();
+      c.translate(ix, 0);
+      this.shape(c, (c) => {
+        c.moveTo(0, iy);
+        c.lineTo(dw, iy - 0.03 * Math.sin(open * 2));
+        c.lineTo(dw, iy + ih + 0.03 * Math.sin(open * 2));
+        c.lineTo(0, iy + ih);
+        c.closePath();
+      });
+      if (cosA > 0.05) {
+        // кодовый замок и ручка
+        c.save();
+        c.translate(dw * 0.5, iy + ih * 0.55);
+        c.scale(cosA, 1);
+        this.shape(c, (c) => c.arc(0, 0, 0.09, 0, TAU));
+        for (let i = 0; i < 8; i++) {
+          const a = (i / 8) * TAU + dial;
+          this.line(c, [Math.cos(a) * 0.065, Math.sin(a) * 0.065, Math.cos(a) * 0.085, Math.sin(a) * 0.085]);
+        }
+        this.line(c, [0, 0, Math.cos(dial) * 0.05, Math.sin(dial) * 0.05]);
+        c.restore();
+        this.line(c, [dw * 0.85, iy + ih * 0.35, dw * 0.85, iy + ih * 0.2]);
+      }
+      c.restore();
+      // щелчки замка
+      if (dial && open === 0 && Math.sin(t * 20) > 0.6) {
+        c.save();
+        c.lineWidth = 0.018;
+        this.line(c, [0.02, 0.5, 0.08, 0.56]);
+        this.line(c, [0.09, 0.44, 0.16, 0.46]);
+        c.restore();
+      }
     }
 
     drawCoinFlat(c, x, y, r) {
@@ -325,9 +609,8 @@
       c.fillStyle = this.fill;
     }
 
-    drawBang(c, t) {
-      // «!» над головой, подпрыгивает
-      const y = 1.35 + Math.abs(Math.sin(t * 7)) * 0.05;
+    drawBang(c, t, y0 = 1.35) {
+      const y = y0 + Math.abs(Math.sin(t * 7)) * 0.05;
       c.lineWidth = 0.045;
       this.line(c, [0, y, 0, y + 0.2]);
       c.fillStyle = this.ink;
@@ -337,32 +620,263 @@
       c.fillStyle = this.fill;
     }
 
+    /** Световое пятно на полу (эллипс в перспективе). */
+    floorGlow(x, z, r, a, additive) {
+      const q = this.bg.project(x, 0, z);
+      if (!q) return null;
+      const c = this.ctx;
+      const R = (this.bg.cam.F / q[2]) * r;
+      c.save();
+      c.globalCompositeOperation = additive ? 'lighter' : 'source-over';
+      c.translate(q[0], q[1]);
+      c.scale(1, 0.45);
+      const g = c.createRadialGradient(0, 0, 0, 0, 0, R);
+      g.addColorStop(0, this.inkA(a));
+      g.addColorStop(0.7, this.inkA(a * 0.5));
+      g.addColorStop(1, this.inkA(0));
+      c.fillStyle = g;
+      c.beginPath();
+      c.arc(0, 0, R, 0, TAU);
+      c.fill();
+      c.restore();
+      return [q[0], q[1], R];
+    }
+
+    /* ---------- эффекты ---------- */
+
+    drawSchema(t) {
+      const bg = this.bg, c = this.ctx;
+      const ang = rad(bg.opts.angle);
+      const ca = Math.cos(ang), sa = Math.sin(ang);
+      const nodeAt = (i) => Math.max(0, t - 0.4 - i * 0.3);
+      // связи
+      EDGES.forEach(([a, b], ei) => {
+        const k = ease((Math.min(nodeAt(a), nodeAt(b)) - 0.2) / 0.6);
+        if (k <= 0) return;
+        const A = NODES[a], B = NODES[b];
+        const pa = bg.project(A[0], 0, A[1]);
+        const pb = bg.project(lerp(A[0], B[0], k), 0, lerp(A[1], B[1], k));
+        if (!pa || !pb) return;
+        c.save();
+        c.strokeStyle = this.inkA(0.45);
+        c.lineWidth = 1.2;
+        c.setLineDash([6, 5]);
+        c.lineDashOffset = -t * 18;
+        c.beginPath();
+        c.moveTo(pa[0], pa[1]);
+        c.lineTo(pb[0], pb[1]);
+        c.stroke();
+        c.restore();
+        // монета бежит по маршруту
+        if (k >= 1) {
+          const u = ((t * 0.35 + ei * 0.37) % 1);
+          const x = lerp(A[0], B[0], u), z = lerp(A[1], B[1], u);
+          this.local(x, z, 1, (c) => {
+            c.globalAlpha *= Math.sin(Math.PI * u);
+            this.drawCoinFlat(c, 0, 0.09, 0.08);
+          });
+        }
+      });
+      // узлы — подсвеченные плитки
+      NODES.forEach(([x, z], i) => {
+        const k = ease(nodeAt(i) / 0.4);
+        if (k <= 0) return;
+        const pulse = 0.6 + 0.4 * Math.sin(t * 2.4 + i);
+        const r = 0.34 * k;
+        const pts = [[1, 0], [0, 1], [-1, 0], [0, -1]].map(([u, v]) => {
+          // квадрат плитки, повёрнутый так же, как сетка пола
+          const a = (u + v) * r, b = (v - u) * r;
+          return bg.project(x + a * ca - b * sa, 0, z + a * sa + b * ca);
+        });
+        if (pts.some((q) => !q)) return;
+        c.save();
+        c.beginPath();
+        pts.forEach((q, j) => (j ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1])));
+        c.closePath();
+        c.fillStyle = this.inkA(0.12 * pulse);
+        c.fill();
+        c.strokeStyle = this.inkA(0.75);
+        c.lineWidth = 1.3;
+        c.stroke();
+        c.restore();
+      });
+    }
+
+    drawSpot(tl, additive) {
+      const [x, z] = this.spotAt(tl);
+      const res = this.floorGlow(x, z, 1.3, additive ? 0.2 : 0.09, additive);
+      if (!res) return;
+      // конус света от прожектора сверху
+      const c = this.ctx;
+      const ax = this.bg.W * 0.12, ay = -30;
+      c.save();
+      c.globalCompositeOperation = additive ? 'lighter' : 'source-over';
+      const g = c.createLinearGradient(ax, ay, res[0], res[1]);
+      g.addColorStop(0, this.inkA(additive ? 0.1 : 0.04));
+      g.addColorStop(1, this.inkA(additive ? 0.03 : 0.015));
+      c.fillStyle = g;
+      c.beginPath();
+      c.moveTo(ax - 8, ay);
+      c.lineTo(res[0] - res[2], res[1]);
+      c.lineTo(res[0] + res[2], res[1]);
+      c.lineTo(ax + 8, ay);
+      c.closePath();
+      c.fill();
+      c.restore();
+    }
+
+    drawLasers(t, additive) {
+      const c = this.ctx;
+      for (const lx of LASERS) {
+        for (const pz of [Z - 0.5, Z + 0.5]) {
+          this.local(lx, pz, 1, (c) => {
+            this.line(c, [0, 0, 0, 0.3]);
+            this.shape(c, (c) => c.roundRect(-0.03, 0.26, 0.06, 0.06, 0.01));
+          });
+        }
+        const a = this.bg.project(lx, 0.17, Z - 0.5);
+        const b = this.bg.project(lx, 0.17, Z + 0.5);
+        if (!a || !b) continue;
+        const blink = 0.65 + 0.35 * Math.sin(t * 9 + lx);
+        c.save();
+        c.globalCompositeOperation = additive ? 'lighter' : 'source-over';
+        c.lineCap = 'round';
+        c.strokeStyle = this.inkA(0.18 * blink);
+        c.lineWidth = 7;
+        c.beginPath();
+        c.moveTo(a[0], a[1]);
+        c.lineTo(b[0], b[1]);
+        c.stroke();
+        c.strokeStyle = this.inkA(0.9 * blink);
+        c.lineWidth = 1.5;
+        c.stroke();
+        c.restore();
+      }
+    }
+
+    /** Все положения лисы до момента tl (для следов и дорожки монет). */
+    foxPathPoints(p, tl, step) {
+      const out = [];
+      let last = null, dist = 0;
+      const push = (x, z, time, dir) => {
+        if (last) dist += Math.hypot(x - last[0], z - last[1]);
+        if (!last || dist >= step) {
+          out.push({ x, z, time, dir, i: out.length });
+          dist = 0;
+        }
+        last = [x, z];
+      };
+      const entryEnd = Math.min(tl, p.scared ?? p.arrive, p.arrive);
+      for (let time = p.tIn; time <= entryEnd; time += 0.05) push(this.entryAt(p, time).x, Z, time, 1);
+      for (let time = p.escStart; time <= Math.min(tl, p.escEnd); time += 0.04) {
+        const [x, z] = this.escapeAt(p, (time - p.escStart) / T.escape);
+        push(x, z, time, -1);
+      }
+      return out;
+    }
+
+    drawPaws(p, tl) {
+      for (const pt of this.foxPathPoints(p, tl, 0.32)) {
+        if (this.hopAt(pt.x, pt.z) > 0.02) continue;
+        const age = tl - pt.time;
+        const a = clamp(1 - age / 3.5, 0, 1);
+        if (a <= 0) continue;
+        const side = pt.i % 2 ? 0.07 : -0.07;
+        this.local(pt.x, pt.z + side, pt.dir, (c) => {
+          c.globalAlpha *= a * 0.85;
+          c.scale(1, 0.45);
+          c.fillStyle = this.ink;
+          c.beginPath();
+          c.ellipse(0, 0, 0.045, 0.035, 0, 0, TAU);
+          c.fill();
+          for (const [dx, dy] of [[0.06, 0.035], [0.075, 0], [0.06, -0.035]]) {
+            c.beginPath();
+            c.arc(dx, dy, 0.016, 0, TAU);
+            c.fill();
+          }
+        });
+      }
+    }
+
+    /** Монеты, выпавшие из дырявого мешка по пути бегства. */
+    trailCoins(p, tl) {
+      const out = [];
+      for (let time = p.escStart + 0.2; time <= Math.min(tl, p.escStart + T.escape * 0.7); time += 0.28) {
+        const [x, z] = this.escapeAt(p, (time - p.escStart) / T.escape);
+        out.push({ x, z, age: tl - time });
+      }
+      return out;
+    }
+
+    drawFinale(p, tl, sources) {
+      const k0 = tl - p.finaleStart;
+      if (k0 <= 0) return;
+      const c = this.ctx, W = this.bg.W, H = this.bg.H;
+      const cx = W / 2, cy = H * 0.15, sc = Math.min(W * 0.11, H * 0.16);
+      MASK.forEach(([mx, my], i) => {
+        const delay = (i % 17) * 0.035 + Math.floor(i / 17) * 0.05;
+        const k = ease((k0 - delay) / 1.2);
+        if (k <= 0) return;
+        const src = sources[i % sources.length];
+        const tx = cx + mx * sc, ty = cy + my * sc;
+        const x = lerp(src[0], tx, k);
+        const y = lerp(src[1], ty, k) - Math.sin(Math.PI * k) * H * 0.12;
+        const r = lerp(src[2], 4, k);
+        const tw = k >= 1 ? 0.75 + 0.25 * Math.sin(tl * 4 + i) : 1;
+        c.save();
+        c.globalAlpha *= tw;
+        c.lineWidth = 1.2;
+        c.beginPath();
+        c.arc(x, y, r, 0, TAU);
+        c.fill();
+        c.stroke();
+        c.beginPath();
+        c.arc(x, y, r * 0.55, 0, TAU);
+        c.stroke();
+        c.restore();
+      });
+    }
+
     /* ---------- кадр ---------- */
 
     draw(pal, real) {
       const bg = this.bg;
+      const fx = this.fx;
       this.vis += clamp((this.enabled ? 1 : 0) - this.vis, -real / 0.5, real / 0.5);
       // в финале цикла сцена тает быстрее плиток
       this.alpha = this.vis * (1 - ease((bg.outro || 0) * 1.8));
       if (this.alpha <= 0) return;
       const t = bg.clock - this.start;
-      if (t <= 0) return;
+      if (t <= 0) {
+        this.reset();
+        return;
+      }
 
       const c = (this.ctx = bg.ctx);
-      this.ink = `rgba(${pal.ink[0] | 0},${pal.ink[1] | 0},${pal.ink[2] | 0},1)`;
+      this.pal = pal;
+      this.ink = this.inkA(1);
       this.fill = `rgba(${pal.fill[0] | 0},${pal.fill[1] | 0},${pal.fill[2] | 0},1)`;
+      const additive = pal.additive;
       c.save();
       c.globalCompositeOperation = 'source-over';
       c.globalAlpha = this.alpha;
       c.strokeStyle = this.ink;
       c.fillStyle = this.fill;
 
-      const rev = ease(t / 1.6); // материализация шахтёра и кучки
-      const tl = t < 1.6 ? -1 : (t - 1.6) % T.cycle; // время внутри цикла
+      const rev = ease(t / 1.6); // материализация
+      let p = this.plan();
+      const cycleLen = p.end + 0.6; // если повтор фона выключен — сцена крутится сама
+      const idx = t < 1.6 ? -1 : Math.floor((t - 1.6) / cycleLen);
+      if (idx !== this.cycleIdx) {
+        this.cycleIdx = idx;
+        this.scaredAt = null;
+        p = this.plan();
+      }
+      const tl = t < 1.6 ? -1 : (t - 1.6) % cycleLen; // время внутри цикла
 
-      // ---- удары кирки и монеты ----
+      // ---- удары кирки ----
       let swing = rad(-25), lean = 0, strikeAge = 99;
-      if (tl >= 0 && tl < T.digUntil) {
+      if (tl >= 0 && tl < p.digUntil) {
         const u = tl % T.swing;
         const up = rad(118), down = rad(-38), rest = rad(-25);
         if (u < 0.62) swing = lerp(rest, up, ease(u / 0.62));
@@ -370,15 +884,43 @@
         else swing = lerp(down, rest, ease((u - T.strike) / (T.swing - T.strike)));
         lean = u > 0.62 && u < 1.0 ? 0.12 * Math.sin(Math.PI * clamp((u - 0.62) / 0.38, 0, 1)) : 0;
         strikeAge = u - T.strike;
-      } else if (tl >= T.digUntil) {
+      } else if (tl >= p.digUntil) {
         swing = rad(-65);
       }
 
-      // монеты в кучке: лиса утаскивает STEAL штук, в начале следующего цикла они
-      // тихо возвращаются (чтобы цикл замыкался)
-      const stolen = tl >= T.foxAt ? Math.min(STEAL, Math.floor((tl - T.foxAt) / 0.1) + 1) : 0;
-      const firstCycle = t - 1.6 < T.cycle;
-      const restore = tl >= 0 && tl < 1.5 && !firstCycle ? ease(tl / 1.5) : 1; // 0 → монет ещё нет
+      // сколько монет утащено (если лису спугнули — сколько успела)
+      const tStolen = Math.min(tl, p.escStart);
+      const stolen = tStolen >= p.grabStart ? Math.min(STEAL, Math.floor((tStolen - p.grabStart) / 0.1) + 1) : 0;
+      const restore = tl >= 0 && tl < 1.5 && idx > 0 ? ease(tl / 1.5) : 1;
+
+      // ---- схема на плитках (фоном) ----
+      if (fx.schema) this.drawSchema(t);
+
+      // ---- прожектор ----
+      if (fx.spot && tl >= 0) {
+        c.save();
+        c.globalAlpha = this.alpha * rev;
+        this.drawSpot(tl, additive);
+        c.restore();
+      }
+
+      // ---- следы лап ----
+      if (fx.paws && tl >= p.tIn) this.drawPaws(p, tl);
+
+      // ---- лазеры ----
+      if (fx.lasers && rev > 0) {
+        c.save();
+        c.globalAlpha = this.alpha * rev;
+        this.drawLasers(t, additive);
+        c.restore();
+      }
+
+      // ---- спящий охранник ----
+      if (fx.guard) {
+        this.local(GUARD[0], GUARD[1], 1, (c) => {
+          this.materialize(c, rev, 1.2, 0.5, () => this.drawGuard(c, t));
+        });
+      }
 
       // ---- земля: куча у места копки ----
       this.local(MOUND_X, Z, 1, (c) => {
@@ -391,32 +933,54 @@
         });
       });
 
-      // ---- кучка монет ----
-      this.local(PILE_X, Z, 1, (c) => {
-        this.materialize(c, rev, 0.3, 0.35, () => {
-          const n = Math.min(PILE_START, PILE_SLOTS.length);
-          for (let i = 0; i < n; i++) {
-            const top = i >= n - STEAL; // верхние монеты — те, что утащит лиса
-            if (top && n - 1 - i < stolen) continue;
-            const a = top ? clamp(restore * STEAL - (i - (n - STEAL)), 0, 1) : 1;
-            if (a <= 0) continue;
-            c.globalAlpha = this.alpha * a;
-            this.drawPileCoin(c, PILE_SLOTS[i][0], PILE_SLOTS[i][1]);
-          }
-          c.globalAlpha = this.alpha;
+      // ---- кучка монет или сейф ----
+      if (fx.safe) {
+        const cracking = tl >= p.arrive && tl < p.crackEnd && tl < p.escStart;
+        const dial = cracking ? Math.sin((tl - p.arrive) * 5) * 2.5 + (tl - p.arrive) * 3 : 0;
+        const open = p.scared != null && p.scared < p.crackEnd ? 0 : ease((tl - p.crackEnd) / T.doorOpen);
+        this.local(PILE_X, Z, 1, (c) => {
+          this.materialize(c, rev, 0.65, 0.35, () => this.drawSafe(c, open, dial, STEAL - stolen, tl));
         });
-      });
+      } else {
+        this.local(PILE_X, Z, 1, (c) => {
+          this.materialize(c, rev, 0.3, 0.35, () => {
+            const n = Math.min(PILE_START, PILE_SLOTS.length);
+            for (let i = 0; i < n; i++) {
+              const top = i >= n - STEAL; // верхние монеты — те, что утащит лиса
+              if (top && n - 1 - i < stolen) continue;
+              const a = top ? clamp(restore * STEAL - (i - (n - STEAL)), 0, 1) : 1;
+              if (a <= 0) continue;
+              c.globalAlpha = this.alpha * a;
+              this.drawPileCoin(c, PILE_SLOTS[i][0], PILE_SLOTS[i][1]);
+            }
+            c.globalAlpha = this.alpha;
+          });
+        });
+      }
 
-      // ---- луч фонаря (в тёмной теме) ----
-      if (pal.additive && rev > 0.5) {
-        const turned = tl >= T.noticeFrom && tl < T.noticeTo;
-        const a = this.bg.project(MINER_X + (turned ? -0.13 : 0.15), 1.07, Z);
-        const b1 = this.bg.project(turned ? MINER_X - 1.3 : DIG_X + 0.5, 0, Z - 0.3);
-        const b2 = this.bg.project(turned ? MINER_X - 1.3 : DIG_X + 0.5, 0, Z + 0.3);
+      // ---- дорожка монет из мешка ----
+      const trail = fx.sack && tl >= p.escStart ? this.trailCoins(p, tl) : [];
+      const trailFade = fx.finale ? 1 - ease((tl - p.finaleStart) / 0.6) : 1; // в финале улетают в маску
+      for (const tc of trail) {
+        const fall = clamp(tc.age / 0.25, 0, 1);
+        if (trailFade <= 0) break;
+        this.local(tc.x, tc.z, 1, (c) => {
+          c.globalAlpha *= trailFade;
+          if (fall < 1) this.drawCoinFlat(c, 0, 0.35 * (1 - fall * fall) + 0.06, 0.06);
+          else this.drawPileCoin(c, 0, 0);
+        });
+      }
+
+      // ---- луч фонаря шахтёра (в тёмной теме) ----
+      const turn = tl >= p.noticeFrom && tl < p.noticeTo;
+      if (additive && rev > 0.5) {
+        const a = bg.project(MINER_X + (turn ? -0.13 : 0.15), 1.07, Z);
+        const b1 = bg.project(turn ? MINER_X - 1.3 : DIG_X + 0.5, 0, Z - 0.3);
+        const b2 = bg.project(turn ? MINER_X - 1.3 : DIG_X + 0.5, 0, Z + 0.3);
         if (a && b1 && b2) {
           const g = c.createRadialGradient(a[0], a[1], 0, a[0], a[1], Math.hypot(b1[0] - a[0], b1[1] - a[1]));
-          g.addColorStop(0, `rgba(${pal.ink[0] | 0},${pal.ink[1] | 0},${pal.ink[2] | 0},0.22)`);
-          g.addColorStop(1, `rgba(${pal.ink[0] | 0},${pal.ink[1] | 0},${pal.ink[2] | 0},0)`);
+          g.addColorStop(0, this.inkA(0.22));
+          g.addColorStop(1, this.inkA(0));
           c.save();
           c.globalCompositeOperation = 'lighter';
           c.globalAlpha = this.alpha * (rev - 0.5) * 2;
@@ -432,10 +996,9 @@
       }
 
       // ---- шахтёр ----
-      const turn = tl >= T.noticeFrom && tl < T.noticeTo;
       this.local(MINER_X, Z, 1, (c) => {
         this.materialize(c, rev, 1.2, 0.5, () => this.drawMiner(c, { swing, lean, turn }));
-        if (turn && tl < T.noticeFrom + 1.8) this.drawBang(c, tl);
+        if (turn && tl < p.noticeFrom + 1.8) this.drawBang(c, tl);
       });
 
       // ---- комья земли при ударе ----
@@ -454,14 +1017,13 @@
         });
       }
 
-      // ---- искорки, когда лиса утаскивает монеты ----
-      if (tl >= T.foxAt && tl < T.foxGrab + 0.3) {
+      // ---- монеты летят к лисе, пока она их хватает ----
+      if (tl >= p.grabStart && tl < Math.min(p.grabEnd, p.escStart) + 0.3) {
         this.local(PILE_X, Z, 1, (c) => {
-          const n = Math.min(STEAL, Math.floor((tl - T.foxAt) / 0.1) + 1);
-          for (let i = 0; i < n; i++) {
-            const age = tl - T.foxAt - i * 0.1;
+          for (let i = 0; i < stolen; i++) {
+            const age = tl - p.grabStart - i * 0.1;
             if (age > 0.3) continue;
-            const x = -0.15 - age * 0.9, y = 0.1 + age * 1.2;
+            const x = -0.15 - age * 0.9, y = (fx.safe ? 0.3 : 0.1) + age * 1.2;
             c.globalAlpha = this.alpha * (1 - age / 0.3);
             this.drawCoinFlat(c, x, y, 0.04);
           }
@@ -470,43 +1032,84 @@
       }
 
       // ---- лиса ----
-      if (tl >= T.foxIn && tl < T.foxGone) {
-        let x, z, dir = 1, run = true, gait, coin = false, alpha = 1;
-        if (tl < T.foxAt) {
-          const k = (tl - T.foxIn) / (T.foxAt - T.foxIn);
-          const e = k < 0.85 ? k / 0.85 * 0.93 : 0.93 + ease((k - 0.85) / 0.15) * 0.07;
-          x = lerp(FOX_START_X, FOX_STOP_X, e);
+      let foxScreen = null;
+      if (tl >= p.tIn && tl < p.escEnd) {
+        let x, z, dir = 1, run = true, gait, alpha = 1, crouch = false, paw = false, tiptoe = false;
+        const loot = stolen > 0;
+        if (tl < p.escStart && tl < p.arrive) {
+          const e = this.entryAt(p, tl);
+          x = e.x;
           z = Z;
           gait = (x - FOX_START_X) * 11;
-          alpha = clamp((tl - T.foxIn) / 0.3, 0, 1);
-          if (k > 0.97) run = false;
-        } else if (tl < T.foxGrab) {
+          run = e.moving;
+          crouch = e.mode === 2;
+          tiptoe = e.mode === 1;
+          alpha = clamp((tl - p.tIn) / 0.3, 0, 1);
+        } else if (tl < p.escStart) {
           x = FOX_STOP_X;
           z = Z;
           run = false;
           gait = 0;
-          coin = tl > T.foxAt + 0.15;
+          paw = fx.safe && tl < p.crackEnd;
         } else {
-          const k = (tl - T.foxGrab) / (T.foxGone - T.foxGrab);
-          const e = Math.pow(k, 1.25);
-          // квадратичная кривая Безье: старт → изгиб → финиш
-          const u = 1 - e;
-          x = u * u * FOX_STOP_X + 2 * u * e * FOX_BEND[0] + e * e * FOX_END[0];
-          z = u * u * Z + 2 * u * e * FOX_BEND[1] + e * e * FOX_END[1];
+          const k = (tl - p.escStart) / T.escape;
+          [x, z] = this.escapeAt(p, k);
           dir = -1;
-          coin = true;
           gait = k * 90;
-          const q = this.bg.project(x, 0, z);
+          const q = bg.project(x, 0, z);
           alpha = q ? clamp(1 - (q[2] - 8) / 16, 0, 1) * (1 - ease((k - 0.55) / 0.45)) : 0; // растворяется в бездне
         }
+        const hop = this.hopAt(x, z);
         c.globalAlpha = this.alpha * alpha;
-        this.local(x, z, dir, (c) => this.drawFox(c, { gait, run, coin, wag: tl }));
+        this.local(x, z, dir, (c) => {
+          this.drawFox(c, { gait, run, wag: tl, crouch, paw, tiptoe, hop: hop > 0.03, coin: loot && !fx.sack, sack: fx.sack && loot });
+          if (p.scared != null && tl >= p.scared && tl < p.scared + 0.9) this.drawBang(c, tl, 0.62);
+        }, hop);
         c.globalAlpha = this.alpha;
+        foxScreen = bg.project(x, 0.3, z);
+      }
+
+      // ---- курсор-фонарик ----
+      const ptr = bg.pointer;
+      if (fx.flashlight && ptr.active) {
+        c.save();
+        c.globalCompositeOperation = additive ? 'lighter' : 'source-over';
+        const g = c.createRadialGradient(ptr.px, ptr.py, 0, ptr.px, ptr.py, 150);
+        g.addColorStop(0, this.inkA(additive ? 0.16 : 0.07));
+        g.addColorStop(1, this.inkA(0));
+        c.fillStyle = g;
+        c.beginPath();
+        c.arc(ptr.px, ptr.py, 150, 0, TAU);
+        c.fill();
+        c.restore();
+        // лису поймали лучом — пугается и убегает
+        if (foxScreen && this.scaredAt == null && tl >= p.tIn + 0.3 && tl < p.escStart &&
+            Math.hypot(foxScreen[0] - ptr.px, foxScreen[1] - ptr.py) < SCARE_RADIUS) {
+          this.scaredAt = tl;
+        }
+      }
+
+      // ---- финал: монеты собираются в маску вора ----
+      if (fx.finale && tl >= p.finaleStart) {
+        const src = [];
+        for (const tc of trail) {
+          const q = bg.project(tc.x, 0, tc.z);
+          if (q) src.push([q[0], q[1], 3]);
+        }
+        // остальные монеты «поднимаются» с плиток
+        for (let i = src.length; i < 24; i++) {
+          const q = bg.project(-8 + ((i * 7.3) % 16), 0, Z + 1 + ((i * 3.7) % 9));
+          if (q) src.push([q[0], q[1], 2]);
+        }
+        c.fillStyle = this.fill;
+        c.strokeStyle = this.ink;
+        this.drawFinale(p, tl, src);
       }
 
       c.restore();
     }
   }
 
+  MinerScene.FX = FX;
   window.MinerScene = MinerScene;
 })();
