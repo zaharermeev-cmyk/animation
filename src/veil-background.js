@@ -518,6 +518,6 @@ class VeilBackground {
 }
 
 // доступно как обычный <script>: window.VeilBackground
-VeilBackground.VERSION = '20 — испуг лисы завершает сцену';
+VeilBackground.VERSION = '21 — дополнения к схеме';
 window.VeilBackground = VeilBackground;
 window.VEIL_DEFAULTS = DEFAULTS;

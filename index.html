@@ -46,7 +46,8 @@
     .fx-title button { all: unset; cursor: pointer; font-size: 11px; color: var(--text-muted); }
     .fx label { display: flex; align-items: center; gap: 8px; padding: 4px 0; cursor: pointer; color: var(--text); }
     .fx input { accent-color: #5b82f7; }
-    .fx.collapsed label { display: none; }
+    .fx-group { margin: 10px 0 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); }
+    .fx.collapsed label, .fx.collapsed .fx-group { display: none; }
     .fx.collapsed .fx-title { margin-bottom: 0; }
 
     /* ===== окно входа в админку (накладывается поверх фона) ===== */
@@ -167,7 +168,16 @@
     });
 
     const fxPanel = document.getElementById('fx');
-    for (const [key, label] of MinerScene.FX) {
+    let group = null;
+    for (const [key, label, o = {}] of MinerScene.FX) {
+      if (o.hidden) continue; // всегда включено — в панели не показываем
+      if (o.group && o.group !== group) {
+        group = o.group;
+        const h = document.createElement('div');
+        h.className = 'fx-group';
+        h.textContent = group;
+        fxPanel.append(h);
+      }
       const row = document.createElement('label');
       row.innerHTML = '<input type="checkbox"> <span></span>';
       row.querySelector('span').textContent = label;
