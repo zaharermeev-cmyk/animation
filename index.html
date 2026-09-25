@@ -14,7 +14,8 @@
   <style>
     html, body { margin: 0; height: 100%; overflow: hidden; }
     body {
-      background: var(--page-bg);
+      background: radial-gradient(ellipse at 50% 45%, color-mix(in srgb, var(--page-bg) 88%, #3a5a9a), var(--page-bg) 70%);
+      background-color: var(--page-bg);
       color: var(--text);
       font: 15px/1.45 Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
       transition: background-color 0.6s ease, color 0.6s ease;
@@ -67,6 +68,7 @@
 
   <div class="controls">
     <button id="replay">Повторить интро</button>
+    <button id="objects">Объекты</button>
     <button id="theme">Тема</button>
   </div>
 
@@ -76,11 +78,23 @@
     const bg = new VeilBackground(document.getElementById('veil'));
     window.veil = bg;
 
-    // объекты на полу: col — плитка вбок от центра, row — ряд вглубь
-    bg.place(document.getElementById('o1'), { col: -5, row: 0, height: 0.55 });
-    bg.place(document.getElementById('o2'), { col: 4, row: 0, height: 0.55 });
-    bg.place(document.getElementById('o3'), { col: -7, row: 6, height: 0.55 });
-    bg.place(document.getElementById('o4'), { col: 6, row: 6, height: 0.55 });
+    // объекты на поверхности (по умолчанию скрыты — кнопка «Объекты»)
+    const spots = [
+      ['o1', { x: -6.5, z: -3, height: 2.2 }],
+      ['o2', { x: 6.5, z: -3, height: 2.2 }],
+      ['o3', { x: -7, z: 6, height: 2.2 }],
+      ['o4', { x: 7, z: 6, height: 2.2 }],
+    ];
+    let shown = false;
+    const els = spots.map(([id]) => document.getElementById(id));
+    els.forEach((el) => (el.style.display = 'none'));
+    document.getElementById('objects').onclick = () => {
+      shown = !shown;
+      spots.forEach(([id, pos], i) => {
+        els[i].style.display = shown ? '' : 'none';
+        shown ? bg.place(els[i], pos) : bg.remove(els[i]);
+      });
+    };
 
     bg.start();
 

@@ -4,10 +4,11 @@
 :root {
   /* светлая тема */
   --page-bg: #ffffff;
-  --veil-a: #a8661c; /* тёплая нить (золото) */
-  --veil-b: #2a489e; /* холодная нить (синяя) */
-  --veil-grid: rgba(30, 45, 85, 0.22);
-  --veil-glint: #d08a2a;
+  --veil-a: #9a6420; /* золотые волокна */
+  --veil-b: #2d4f96; /* голубые волокна */
+  --veil-smoke: #7f97c4; /* дымчатый шёлк */
+  --veil-grid: rgba(120, 90, 45, 0.3); /* линии плиток */
+  --veil-glint: #c9861f;
   --veil-shadow: rgba(20, 30, 60, 0.28); /* тень под объектами */
   --veil-blend: normal; /* normal | lighter */
   --veil-intensity: 1;
@@ -17,11 +18,12 @@
 }
 
 :root[data-theme='dark'] {
-  --page-bg: #000000;
-  --veil-a: #e8c690;
-  --veil-b: #a3bcff;
-  --veil-grid: rgba(150, 175, 225, 0.3);
-  --veil-glint: #fff3da;
+  --page-bg: #03060c;
+  --veil-a: #e3be82;
+  --veil-b: #b4cdf2;
+  --veil-smoke: #7e9fd6;
+  --veil-grid: rgba(222, 196, 150, 0.42);
+  --veil-glint: #fff1d6;
   --veil-shadow: rgba(140, 170, 255, 0.35); /* свечение под объектами */
   --veil-blend: lighter;
   --veil-intensity: 1;

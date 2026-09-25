@@ -1,49 +1,48 @@
 /**
  * VeilBackground — анимированный фон по референсу:
- *  - 3D-тоннель из плиток: пол уходит к горизонту в центре экрана и
- *    загибается в стены и потолок;
- *  - объёмные вуали из сотен нитей с мягким свечением и искрами;
- *  - на пол можно ставить DOM-объекты (bg.place) — они стоят «на земле»,
- *    масштабируются по глубине и отбрасывают контактную тень.
+ *  - волнистая сетка-ландшафт из ромбовидных плиток (вид сверху под углом),
+ *    с провалом в центре и подсветкой складок;
+ *  - вуали: мягкий дымчатый «шёлк», пучки волокон с огоньками на кончиках,
+ *    свободные завитки и россыпь искр;
+ *  - на поверхность можно ставить DOM-объекты (bg.place).
  *
- * Интро: пустой экран → от центра материализуются плитки → вырастают вуали.
- * Цвета — из CSS-переменных (--veil-*), фон сам подстраивается под тему.
+ * Интро: пустой экран → от центра материализуется сетка → вырастают вуали.
+ * Цвета — из CSS-переменных (--veil-*), фон подстраивается под тему.
  */
 
 const TAU = Math.PI * 2;
 const lerp = (a, b, t) => a + (b - a) * t;
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const smooth = (t) => t * t * (3 - 2 * t);
-const sstep = (a, b, v) => smooth(clamp((v - a) / (b - a), 0, 1));
 
 export const DEFAULTS = {
   // вуали
-  ribbons: 7, // пучков с каждой стороны
-  strandsPerRibbon: 26, // нитей в пучке
-  wisps: 0.12, // доля «выбившихся» нитей
-  points: 64, // точек на нить
-  glints: 42, // искр
-  bloom: 0.9, // сила свечения
+  ribbons: 7, // пучков волокон с каждой стороны
+  strandsPerRibbon: 22,
+  smoke: 5, // дымчатых полос с каждой стороны
+  loose: 28, // свободных завитков
+  points: 64,
+  glints: 70,
+  bloom: 1,
   strandOpacity: 1,
-  // пол / тоннель
-  tile: 0.4, // размер плитки в мировых единицах
-  camHeight: 1, // высота камеры над полом
-  near: 1.1,
-  far: 26,
-  curve: 0.034, // насколько пол загибается в стены
-  ceiling: 0.6, // яркость потолка относительно пола
-  fog: 1.0, // затухание сетки вдали
-  fov: 0.85,
+  // сетка
+  cell: 0.5, // размер плитки
+  span: 34, // размер поля в мировых единицах
+  hills: 0.55, // высота волн
+  pit: 2.4, // глубина провала в центре
   gridOpacity: 1,
+  camHeight: 7,
+  camBack: 7,
+  fov: 1.0,
   // общее
   speed: 1,
   parallax: true,
   maxDpr: 1.5,
-  seed: 11,
+  seed: 5,
   intro: {
-    delay: 0.5, // пустой экран, с
-    grid: 2.8, // проявление плиток
-    veilsAt: 1.8, // старт вуалей
+    delay: 0.5,
+    grid: 2.8,
+    veilsAt: 1.8,
     veils: 2.8,
   },
 };
@@ -81,11 +80,13 @@ export class VeilBackground {
     this.opts = { ...DEFAULTS, ...options, intro: { ...DEFAULTS.intro, ...options.intro } };
     this.root = document.documentElement;
 
-    // слой вуалей и слой свечения
-    this.layer = document.createElement('canvas');
-    this.lctx = this.layer.getContext('2d');
-    this.bloomCanvas = document.createElement('canvas');
-    this.bctx = this.bloomCanvas.getContext('2d');
+    const mk = () => {
+      const c = document.createElement('canvas');
+      return [c, c.getContext('2d')];
+    };
+    [this.layer, this.lctx] = mk(); // волокна
+    [this.bloomCanvas, this.bctx] = mk(); // свечение
+    [this.smokeCanvas, this.sctx] = mk(); // дым (низкое разрешение)
 
     this.time = 0;
     this.clock = 0;
@@ -143,24 +144,17 @@ export class VeilBackground {
   }
 
   configure(options) {
-    const rebuild = ['ribbons', 'strandsPerRibbon', 'points', 'glints', 'seed', 'wisps'].some(
-      (k) => k in options && options[k] !== this.opts[k]
-    );
     Object.assign(this.opts, options);
-    if (rebuild) this.build();
+    this.build();
   }
 
   /**
-   * Поставить DOM-элемент на пол.
-   *   { col, row }  — плитка: col 0 — справа от центра, -1 — слева; row 0 — ближайший ряд
-   *   { x, z }      — или мировые координаты (x — вбок, z — вглубь)
-   *   height        — высота объекта в мировых единицах (плитка = opts.tile)
-   *   shadow        — контактная тень/свечение под объектом (по умолчанию да)
-   * Нижний центр элемента ставится в точку на полу.
+   * Поставить DOM-элемент на поверхность сетки.
+   *   { x, z }  — мировые координаты (x — вбок, z — вглубь, 0,0 — центр экрана)
+   *   height    — высота объекта в мировых единицах (плитка = opts.cell)
+   * Нижний центр элемента ставится в точку поверхности.
    */
-  place(el, { col, row, x, z, height = 1, shadow = true } = {}) {
-    if (x === undefined) x = (col + 0.5) * this.opts.tile;
-    if (z === undefined) z = this.opts.near + 1.2 + (row + 0.5) * this.opts.tile;
+  place(el, { x = 0, z = 0, height = 2, shadow = true } = {}) {
     Object.assign(el.style, { position: 'fixed', left: '0', top: '0', transformOrigin: '0 0', margin: '0', opacity: '0' });
     const obj = { el, x, z, height, shadow };
     this.objects.push(obj);
@@ -192,10 +186,11 @@ export class VeilBackground {
     const cs = getComputedStyle(this.root);
     const v = (name) => cs.getPropertyValue(name);
     return {
-      a: parseColor(v('--veil-a'), [230, 196, 143, 1]),
-      b: parseColor(v('--veil-b'), [159, 184, 255, 1]),
-      grid: parseColor(v('--veil-grid'), [150, 170, 215, 0.14]),
-      glint: parseColor(v('--veil-glint'), [255, 244, 220, 1]),
+      a: parseColor(v('--veil-a'), [226, 190, 130, 1]),
+      b: parseColor(v('--veil-b'), [170, 200, 245, 1]),
+      smoke: parseColor(v('--veil-smoke'), [150, 180, 230, 1]),
+      grid: parseColor(v('--veil-grid'), [215, 190, 145, 0.4]),
+      glint: parseColor(v('--veil-glint'), [255, 240, 210, 1]),
       shadow: parseColor(v('--veil-shadow'), [120, 150, 220, 0.25]),
       additive: v('--veil-blend').trim() !== 'normal',
       intensity: parseFloat(v('--veil-intensity')) || 1,
@@ -208,15 +203,9 @@ export class VeilBackground {
     const t = smooth(clamp(tr.t, 0, 1));
     const { from, to } = tr;
     const dip = from.additive !== to.additive ? 1 - 0.85 * Math.sin(Math.PI * t) : 1;
-    return {
-      a: mixColor(from.a, to.a, t),
-      b: mixColor(from.b, to.b, t),
-      grid: mixColor(from.grid, to.grid, t),
-      glint: mixColor(from.glint, to.glint, t),
-      shadow: mixColor(from.shadow, to.shadow, t),
-      additive: t < 0.5 ? from.additive : to.additive,
-      intensity: lerp(from.intensity, to.intensity, t) * dip,
-    };
+    const out = { additive: t < 0.5 ? from.additive : to.additive, intensity: lerp(from.intensity, to.intensity, t) * dip };
+    for (const k of ['a', 'b', 'smoke', 'grid', 'glint', 'shadow']) out[k] = mixColor(from[k], to[k], t);
+    return out;
   }
 
   /* ---------- построение вуалей ---------- */
@@ -227,44 +216,79 @@ export class VeilBackground {
     const r = (a, b) => lerp(a, b, rand());
     this.strands = [];
     this.ribbons = [];
+    this.smokes = [];
+    this.loose = [];
 
     for (const side of [-1, 1]) {
+      // пучки волокон
       for (let i = 0; i < o.ribbons; i++) {
-        const y0 = lerp(0.1, 0.9, (i + 0.5) / o.ribbons) + r(-0.05, 0.05);
+        const y0 = lerp(0.12, 0.92, (i + 0.5) / o.ribbons) + r(-0.06, 0.06);
         const ribbon = {
           side,
-          index: i,
           y0,
-          yEnd: 0.5 + (y0 - 0.5) * r(0.12, 0.3),
-          xEnd: r(0.0, 0.05), // насколько не доходит до центра (доля W)
-          spread: r(0.04, 0.11),
-          amp: r(0.04, 0.11),
-          freq: r(0.7, 1.7),
-          twist: r(0.6, 1.9),
-          speed: r(0.1, 0.22),
+          yEnd: 0.5 + (y0 - 0.5) * r(0.1, 0.35) + r(-0.03, 0.03),
+          xEnd: r(0.02, 0.09),
+          spread: r(0.03, 0.1),
+          amp: r(0.05, 0.13),
+          freq: r(0.7, 1.8),
+          twist: r(0.5, 1.8),
+          speed: r(0.1, 0.2),
           phase: r(0, TAU),
-          mix: rand() < 0.5 ? r(0, 0.3) : r(0.65, 1),
-          delay: Math.abs(i - (o.ribbons - 1) / 2) * 0.15 + r(0, 0.2),
+          mix: rand() < 0.6 ? r(0, 0.25) : r(0.7, 1), // чаще золото
+          delay: Math.abs(i - (o.ribbons - 1) / 2) * 0.15 + r(0, 0.25),
           reveal: 0,
         };
         this.ribbons.push(ribbon);
-        const n = o.strandsPerRibbon;
-        for (let s = 0; s < n; s++) {
-          const wisp = rand() < o.wisps;
+        for (let s = 0; s < o.strandsPerRibbon; s++) {
+          const wisp = rand() < 0.1;
           this.strands.push({
             ribbon,
-            k: n > 1 ? s / (n - 1) - 0.5 : 0,
-            mix: rand() < 0.25 ? 1 - ribbon.mix : ribbon.mix + r(-0.1, 0.1),
-            jAmp: wisp ? r(0.04, 0.1) : r(0.003, 0.018),
-            jFreq: wisp ? r(1.5, 3.5) : r(3, 8),
+            k: o.strandsPerRibbon > 1 ? s / (o.strandsPerRibbon - 1) - 0.5 : 0,
+            mix: rand() < 0.3 ? 1 - ribbon.mix : clamp(ribbon.mix + r(-0.15, 0.15), 0, 1),
+            jAmp: wisp ? r(0.04, 0.1) : r(0.004, 0.025),
+            jFreq: wisp ? r(1.5, 3.5) : r(2.5, 7),
             phase: r(0, TAU),
-            alpha: wisp ? r(0.4, 0.9) : r(0.2, 1),
-            width: wisp ? r(0.5, 0.9) : r(0.4, 1.3),
+            alpha: wisp ? r(0.4, 0.9) : r(0.15, 1),
+            width: r(0.4, 1.2),
+            tip: rand() < 0.35, // огонёк на кончике волокна
+            tEnd: r(0.9, 1),
             pts: new Float32Array(o.points * 2),
-            color: null,
           });
         }
       }
+      // дымчатые полосы
+      for (let i = 0; i < o.smoke; i++) {
+        this.smokes.push({
+          side,
+          y0: lerp(0.18, 0.85, (i + 0.5) / o.smoke) + r(-0.08, 0.08),
+          yEnd: 0.5 + r(-0.08, 0.08),
+          xEnd: r(0.05, 0.14),
+          amp: r(0.06, 0.14),
+          freq: r(0.8, 1.6),
+          width: r(0.015, 0.045),
+          speed: r(0.08, 0.16),
+          phase: r(0, TAU),
+          alpha: r(0.35, 0.8),
+          delay: r(0, 0.5),
+        });
+      }
+    }
+
+    // свободные завитки — тонкие волокна, гуляющие поверх сетки
+    for (let i = 0; i < o.loose; i++) {
+      const side = rand() < 0.5 ? -1 : 1;
+      this.loose.push({
+        side,
+        x0: side < 0 ? r(0.02, 0.35) : r(0.65, 0.98),
+        y0: r(0.05, 0.95),
+        len: r(0.08, 0.22),
+        angle: r(-0.6, 0.6) + (side < 0 ? 0 : Math.PI),
+        curl: r(-5, 5),
+        phase: r(0, TAU),
+        alpha: r(0.15, 0.5),
+        mix: rand(),
+        delay: r(0.3, 1.2),
+      });
     }
 
     this.rand = rand;
@@ -274,9 +298,11 @@ export class VeilBackground {
   spawnGlint(g, initial = false) {
     const rand = this.rand;
     g.strand = (rand() * this.strands.length) | 0;
-    g.t = initial ? rand() * 0.9 : rand() * 0.3;
-    g.speed = lerp(0.02, 0.06, rand());
-    g.size = rand() < 0.15 ? lerp(3, 5, rand()) : lerp(0.8, 2, rand());
+    g.t = initial ? rand() * 0.95 : rand() * 0.3;
+    g.speed = lerp(0.01, 0.045, rand());
+    const big = rand() < 0.08;
+    g.size = big ? lerp(3, 4.5, rand()) : lerp(0.6, 1.6, rand());
+    g.bead = big && rand() < 0.5; // «стеклянная капля»
     g.phase = rand() * TAU;
     return g;
   }
@@ -292,6 +318,8 @@ export class VeilBackground {
     }
     this.bloomCanvas.width = Math.round(this.W / 4);
     this.bloomCanvas.height = Math.round(this.H / 4);
+    this.smokeCanvas.width = Math.round(this.W / 4);
+    this.smokeCanvas.height = Math.round(this.H / 4);
   }
 
   frame(now) {
@@ -301,37 +329,51 @@ export class VeilBackground {
     this.raf = requestAnimationFrame((t) => this.frame(t));
   }
 
-  /* ---------- камера и мир ---------- */
+  /* ---------- камера и поверхность ---------- */
 
   prepareCamera() {
-    const px = this.opts.parallax ? this.pointer.x : 0;
-    const py = this.opts.parallax ? this.pointer.y : 0;
-    const yaw = 0.025 * Math.sin(this.time * 0.08) + px * 0.03;
-    const pitch = py * 0.015;
-    this.cam = { cy: Math.cos(yaw), sy: Math.sin(yaw), cp: Math.cos(pitch), sp: Math.sin(pitch), f: this.H * this.opts.fov };
+    const { camHeight, camBack, parallax, fov } = this.opts;
+    const px = parallax ? this.pointer.x : 0;
+    const py = parallax ? this.pointer.y : 0;
+    const eye = [
+      Math.sin(this.time * 0.07) * 0.4 + px * 0.5,
+      camHeight + py * 0.3,
+      -camBack,
+    ];
+    // смотрим в центр поля
+    let f = [-eye[0], -eye[1], -eye[2]];
+    const fl = Math.hypot(...f);
+    f = f.map((v) => v / fl);
+    let r = [f[2], 0, -f[0]];
+    const rl = Math.hypot(...r);
+    r = r.map((v) => v / rl);
+    const u = [f[1] * r[2] - f[2] * r[1], f[2] * r[0] - f[0] * r[2], f[0] * r[1] - f[1] * r[0]];
+    this.cam = { eye, f, r, u, F: this.H * fov };
   }
 
-  /** Высота поверхности (пол: sign = -1, потолок: sign = 1) в точке (x, z). */
-  surfaceY(x, z, sign = -1) {
-    const { camHeight: h, curve } = this.opts;
+  /** Высота поверхности в точке (x, z). */
+  surfaceY(x, z) {
+    const { hills, pit } = this.opts;
     const t = this.time;
-    // пол в центре ровный, волны — на стенах и потолке
-    const wallMask = sign > 0 ? 1 : sstep(2.2, 4.5, Math.abs(x));
-    const wave = 0.16 * wallMask * Math.sin(x * 0.9 + z * 0.35 + t * 0.3) * Math.cos(z * 0.42 - x * 0.3 - t * 0.22);
-    return sign * (h - curve * x * x) + wave;
+    const w =
+      Math.sin(x * 0.42 + z * 0.18 + t * 0.25) * 0.55 +
+      Math.sin(z * 0.55 - x * 0.2 - t * 0.2) * 0.35 +
+      Math.sin((x + z) * 0.9 + t * 0.35) * 0.15;
+    const hole = Math.exp(-(x * x) / 18 - (z * z) / 10);
+    return w * hills - pit * hole;
   }
 
-  /** Мировая точка → экран. Возвращает [sx, sy, depth, screenRadius] или null. */
+  /** Мировая точка → [sx, sy, depth, screenRadius] или null. */
   project(x, y, z) {
-    const { W, H, cam } = this;
-    const xr = x * cam.cy - z * cam.sy;
-    const zr = x * cam.sy + z * cam.cy;
-    const yr = y * cam.cp - zr * cam.sp;
-    const zd = y * cam.sp + zr * cam.cp;
-    if (zd < 0.05) return null;
-    const sx = W / 2 + (xr / zd) * cam.f;
-    const sy = H / 2 - (yr / zd) * cam.f;
-    return [sx, sy, zd, Math.hypot((sx - W / 2) / (W / 2), (sy - H / 2) / (H / 2)) / Math.SQRT2];
+    const { cam, W, H } = this;
+    const dx = x - cam.eye[0], dy = y - cam.eye[1], dz = z - cam.eye[2];
+    const zc = dx * cam.f[0] + dy * cam.f[1] + dz * cam.f[2];
+    if (zc < 0.1) return null;
+    const xc = dx * cam.r[0] + dy * cam.r[1] + dz * cam.r[2];
+    const yc = dx * cam.u[0] + dy * cam.u[1] + dz * cam.u[2];
+    const sx = W / 2 + (xc / zc) * cam.F;
+    const sy = H / 2 - (yc / zc) * cam.F;
+    return [sx, sy, zc, Math.hypot((sx - W / 2) / (W / 2), (sy - H / 2) / (H / 2)) / Math.SQRT2];
   }
 
   /* ---------- интро ---------- */
@@ -344,6 +386,11 @@ export class VeilBackground {
   revealAlpha(r, p) {
     if (p >= 1.3) return 1;
     return clamp((p - r) / 0.16, 0, 1) + Math.exp(-(((p - r) / 0.045) ** 2)) * 1.8;
+  }
+
+  veilReveal(delay) {
+    const { veilsAt, veils } = this.opts.intro;
+    return smooth(clamp((this.clock - veilsAt - delay) / veils, 0, 1)) * 1.3;
   }
 
   /* ---------- кадр ---------- */
@@ -370,60 +417,69 @@ export class VeilBackground {
     ctx.clearRect(0, 0, W, H);
 
     const p = this.gridReveal();
-    this.drawTunnel(pal, p);
+    this.drawGrid(pal, p);
     this.drawShadows(pal, p);
-    this.drawVeils(pal);
+    this.drawSmoke(pal);
+    this.drawFibers(pal);
     this.drawGlints(pal, dt);
     this.updateObjects(p);
   }
 
-  drawTunnel(pal, p) {
+  drawGrid(pal, p) {
     if (p <= 0) return;
-    const { ctx, opts } = this;
-    const { tile, near, far, camHeight, curve } = opts;
-    const xMax = Math.sqrt(camHeight / curve); // где пол встречается с потолком
-    const LEVELS = 18, MAX = 2.8;
-    const buckets = Array.from({ length: LEVELS }, () => []);
+    const { ctx, opts, W, H } = this;
+    const { cell, span } = opts;
+    // ромбы: сетка повёрнута на 45°
+    const N = Math.round((span * Math.SQRT2) / cell);
+    const size = (N + 1) * (N + 1) * 4;
+    if (!this.gridPts || this.gridPts.length !== size) this.gridPts = new Float32Array(size);
+    const P = this.gridPts;
+    const c45 = Math.SQRT1_2;
+    const e = 0.05;
+    const light = [-0.4, 0.8, -0.45];
 
-    const fogA = (z) => Math.pow(clamp(1 - (z - near) / (far - near), 0, 1), opts.fog);
-    const add = (a, b) => {
-      if (!a || !b) return;
-      const al = ((this.revealAlpha(a[3], p) + this.revealAlpha(b[3], p)) / 2) * a[4];
-      if (al <= 0.01) return;
-      buckets[Math.min(LEVELS - 1, Math.round((al / MAX) * (LEVELS - 1)))].push(a[0], a[1], b[0], b[1]);
-    };
-    const pt = (x, z, sign, k) => {
-      const q = this.project(x, this.surfaceY(x, z, sign), z);
-      if (q) q.push(fogA(z) * k);
-      return q;
-    };
-
-    // логарифмическая выборка по глубине — больше точек вблизи
-    const ZS = 44;
-    const zSamples = Array.from({ length: ZS + 1 }, (_, i) => near * Math.pow(far / near, i / ZS));
-    const cols = Math.floor(xMax / tile);
-    const XS = 36;
-
-    for (const sign of [-1, 1]) {
-      const k = sign < 0 ? 1 : opts.ceiling;
-      // продольные линии (x = const)
-      for (let c = -cols; c <= cols; c++) {
-        const x = c * tile;
-        let prev = pt(x, zSamples[0], sign, k);
-        for (let i = 1; i <= ZS; i++) {
-          const cur = pt(x, zSamples[i], sign, k);
-          add(prev, cur);
-          prev = cur;
+    for (let j = 0; j <= N; j++) {
+      for (let i = 0; i <= N; i++) {
+        const a = (i / N - 0.5) * span * Math.SQRT2;
+        const b = (j / N - 0.5) * span * Math.SQRT2;
+        const x = (a - b) * c45;
+        const z = (a + b) * c45 + span * 0.12;
+        const y = this.surfaceY(x, z);
+        const q = this.project(x, y, z);
+        const idx = (j * (N + 1) + i) * 4;
+        if (!q || q[0] < -200 || q[0] > W + 200 || q[1] < -200 || q[1] > H + 200) {
+          P[idx + 3] = -1;
+          continue;
         }
+        // подсветка складок: нормаль через разности высот
+        const nx = this.surfaceY(x - e, z) - this.surfaceY(x + e, z);
+        const nz = this.surfaceY(x, z - e) - this.surfaceY(x, z + e);
+        const ny = 2 * e;
+        const nl = Math.hypot(nx, ny, nz);
+        const lit = (nx * light[0] + ny * light[1] + nz * light[2]) / nl;
+        const shade = 0.35 + 0.9 * clamp(lit, 0, 1) ** 3;
+        // виньетка к краям экрана
+        const vig = 1 - 0.35 * clamp(q[3] * 1.2 - 0.3, 0, 1);
+        P[idx] = q[0];
+        P[idx + 1] = q[1];
+        P[idx + 2] = this.revealAlpha(q[3], p);
+        P[idx + 3] = shade * vig;
       }
-      // поперечные линии (z = const)
-      for (let z = near; z <= far; z += tile) {
-        let prev = pt(-xMax, z, sign, k);
-        for (let i = 1; i <= XS; i++) {
-          const cur = pt(lerp(-xMax, xMax, i / XS), z, sign, k);
-          add(prev, cur);
-          prev = cur;
-        }
+    }
+
+    const LEVELS = 20, MAX = 2.6;
+    const buckets = Array.from({ length: LEVELS }, () => []);
+    const seg = (a, b) => {
+      if (P[a + 3] < 0 || P[b + 3] < 0) return;
+      const al = ((P[a + 2] + P[b + 2]) / 2) * ((P[a + 3] + P[b + 3]) / 2);
+      if (al <= 0.01) return;
+      buckets[Math.min(LEVELS - 1, Math.round((al / MAX) * (LEVELS - 1)))].push(a, b);
+    };
+    for (let j = 0; j <= N; j++) {
+      for (let i = 0; i <= N; i++) {
+        const a = (j * (N + 1) + i) * 4;
+        if (i < N) seg(a, a + 4);
+        if (j < N) seg(a, a + (N + 1) * 4);
       }
     }
 
@@ -433,9 +489,9 @@ export class VeilBackground {
       if (!list.length) continue;
       ctx.strokeStyle = rgba(pal.grid, opts.gridOpacity * (l / (LEVELS - 1)) * MAX);
       ctx.beginPath();
-      for (let k = 0; k < list.length; k += 4) {
-        ctx.moveTo(list[k], list[k + 1]);
-        ctx.lineTo(list[k + 2], list[k + 3]);
+      for (let k = 0; k < list.length; k += 2) {
+        ctx.moveTo(P[list[k]], P[list[k] + 1]);
+        ctx.lineTo(P[list[k + 1]], P[list[k + 1] + 1]);
       }
       ctx.stroke();
     }
@@ -443,103 +499,155 @@ export class VeilBackground {
 
   /* ---------- вуали ---------- */
 
-  computeStrand(s) {
-    const { W, H, time } = this;
-    const rb = s.ribbon;
-    const n = this.opts.points;
-    const xOuter = rb.side < 0 ? -0.06 * W : 1.06 * W;
-    const fx = W / 2 + rb.side * rb.xEnd * W;
-    const fy = rb.yEnd * H;
-    const pts = s.pts;
-    const tt = time * rb.speed;
-
-    for (let p = 0; p < n; p++) {
-      const t = p / (n - 1);
-      const e = Math.pow(1 - t, 1.1); // 1 у края, 0 в центре
-      const x = lerp(xOuter, fx, t);
-      const yc =
-        lerp(rb.y0 * H, fy, smooth(t)) +
-        rb.amp * H * e * Math.sin(t * rb.freq * Math.PI + tt * TAU * 0.35 + rb.phase);
-      const fold = Math.cos(t * rb.twist * Math.PI + tt * 1.3 + rb.phase);
-      const width = rb.spread * H * e + H * 0.02 * (1 - e);
-      const y =
-        yc + s.k * width * fold +
-        s.jAmp * H * Math.sqrt(e) * Math.sin(t * s.jFreq * Math.PI + tt * 2.2 + s.phase);
-      pts[p * 2] = x;
-      pts[p * 2 + 1] = y;
-    }
+  /** Общая форма потока от края экрана к центру. */
+  flow(side, t, y0, yEnd, xEnd, amp, freq, speed, phase) {
+    const { W, H } = this;
+    const xOuter = side < 0 ? -0.06 * W : 1.06 * W;
+    const fx = W / 2 + side * xEnd * W;
+    const e = Math.pow(1 - t, 1.1);
+    const tt = this.time * speed;
+    const x = lerp(xOuter, fx, t);
+    const y = lerp(y0 * H, yEnd * H, smooth(t)) + amp * H * e * Math.sin(t * freq * Math.PI + tt * TAU * 0.35 + phase);
+    return [x, y, e, tt];
   }
 
-  strandGradient(ctx, s, color, a) {
+  maskAt(reveal, t) {
+    if (reveal >= 1.3) return 1;
+    const d = 1 - t;
+    return clamp((reveal - d) / 0.22, 0, 1) + Math.exp(-(((reveal - d) / 0.05) ** 2)) * 0.9;
+  }
+
+  gradientFor(ctx, side, xEnd, color, a, reveal, tEnd = 1, fadeIn = 0.14) {
     const { W } = this;
-    const rb = s.ribbon;
-    const xOuter = rb.side < 0 ? -0.06 * W : 1.06 * W;
-    const fx = W / 2 + rb.side * rb.xEnd * W;
+    const xOuter = side < 0 ? -0.06 * W : 1.06 * W;
+    const fx = W / 2 + side * xEnd * W;
     const grad = ctx.createLinearGradient(xOuter, 0, fx, 0);
     const STOPS = 12;
     for (let k = 0; k < STOPS; k++) {
       const t = k / (STOPS - 1);
-      const prof = t < 0.14 ? t / 0.14 : t < 0.8 ? 1 : 1 - (t - 0.8) / 0.2;
-      const d = 1 - t;
-      const mask = rb.reveal >= 1.3 ? 1 : clamp((rb.reveal - d) / 0.22, 0, 1) + Math.exp(-(((rb.reveal - d) / 0.05) ** 2)) * 0.9;
-      grad.addColorStop(t, rgba(color, a * prof * mask));
+      const prof = t < fadeIn ? t / fadeIn : t < tEnd - 0.12 ? 1 : clamp((tEnd - t) / 0.12, 0, 1);
+      grad.addColorStop(t, rgba(color, a * prof * this.maskAt(reveal, t)));
     }
     return grad;
   }
 
-  drawVeils(pal) {
+  drawSmoke(pal) {
+    const { sctx: c, opts } = this;
+    const sw = this.smokeCanvas.width, sh = this.smokeCanvas.height;
+    const k = sw / this.W;
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.globalCompositeOperation = 'source-over';
+    c.clearRect(0, 0, sw, sh);
+    c.setTransform(k, 0, 0, k, 0, 0);
+    c.globalCompositeOperation = pal.additive ? 'lighter' : 'source-over';
+    let any = false;
+    const n = 40;
+
+    for (const s of this.smokes) {
+      const reveal = this.veilReveal(s.delay);
+      if (reveal <= 0) continue;
+      any = true;
+      const top = [], bot = [];
+      for (let i = 0; i < n; i++) {
+        const t = i / (n - 1);
+        const [x, y, e, tt] = this.flow(s.side, t, s.y0, s.yEnd, s.xEnd, s.amp, s.freq, s.speed, s.phase);
+        const w = this.H * s.width * (0.4 + e) * (0.45 + 0.55 * Math.abs(Math.sin(t * 4.5 + tt * 2 + s.phase)));
+        top.push(x, y - w);
+        bot.push(x, y + w);
+      }
+      c.beginPath();
+      c.moveTo(top[0], top[1]);
+      for (let i = 2; i < top.length; i += 2) c.lineTo(top[i], top[i + 1]);
+      for (let i = bot.length - 2; i >= 0; i -= 2) c.lineTo(bot[i], bot[i + 1]);
+      c.closePath();
+      c.fillStyle = this.gradientFor(c, s.side, s.xEnd, pal.smoke, s.alpha * (pal.additive ? 0.32 : 0.25) * pal.intensity, reveal, 1, 0.3);
+      c.fill();
+    }
+    if (!any) return;
+
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalCompositeOperation = pal.additive ? 'lighter' : 'source-over';
+    ctx.filter = `blur(${Math.round(20 * this.dpr)}px)`;
+    ctx.drawImage(this.smokeCanvas, 0, 0, this.canvas.width, this.canvas.height);
+    ctx.filter = 'none';
+    ctx.restore();
+  }
+
+  computeStrand(s) {
+    const { H } = this;
+    const rb = s.ribbon;
+    const n = this.opts.points;
+    const pts = s.pts;
+    for (let p = 0; p < n; p++) {
+      const t = (p / (n - 1)) * s.tEnd;
+      const [x, yc, e, tt] = this.flow(rb.side, t, rb.y0, rb.yEnd, rb.xEnd, rb.amp, rb.freq, rb.speed, rb.phase);
+      const fold = Math.cos(t * rb.twist * Math.PI + tt * 1.3 + rb.phase);
+      const width = rb.spread * H * e + H * 0.015 * (1 - e);
+      pts[p * 2] = x;
+      pts[p * 2 + 1] =
+        yc + s.k * width * fold + s.jAmp * H * Math.sqrt(e) * Math.sin(t * s.jFreq * Math.PI + tt * 2.2 + s.phase);
+    }
+  }
+
+  drawFibers(pal) {
     const { lctx: c, opts, W, H } = this;
     const n = opts.points;
-    const base = (pal.additive ? 0.42 : 0.34) * pal.intensity * opts.strandOpacity;
-    const { veilsAt, veils } = opts.intro;
+    const base = (pal.additive ? 0.45 : 0.36) * pal.intensity * opts.strandOpacity;
 
     let any = false;
     for (const rb of this.ribbons) {
-      rb.reveal = smooth(clamp((this.clock - veilsAt - rb.delay) / veils, 0, 1)) * 1.3;
+      rb.reveal = this.veilReveal(rb.delay);
       if (rb.reveal > 0) any = true;
     }
     if (!any) return;
 
     c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     c.globalCompositeOperation = 'source-over';
-    c.globalAlpha = 1;
     c.clearRect(0, 0, W, H);
     c.globalCompositeOperation = pal.additive ? 'lighter' : 'source-over';
     c.lineCap = 'round';
     c.lineJoin = 'round';
 
-    for (const s of this.strands) if (s.ribbon.reveal > 0) this.computeStrand(s);
-
-    // «ткань» — полупрозрачная заливка между соседними нитями пучка
-    const per = opts.strandsPerRibbon;
-    for (let ri = 0; ri < this.ribbons.length; ri++) {
-      const rb = this.ribbons[ri];
-      if (rb.reveal <= 0 || per < 2) continue;
-      const first = this.strands[ri * per];
-      const last = this.strands[ri * per + per - 1];
-      const color = mixColor(pal.a, pal.b, rb.mix);
-      c.beginPath();
-      c.moveTo(first.pts[0], first.pts[1]);
-      for (let p = 1; p < n; p++) c.lineTo(first.pts[p * 2], first.pts[p * 2 + 1]);
-      for (let p = n - 1; p >= 0; p--) c.lineTo(last.pts[p * 2], last.pts[p * 2 + 1]);
-      c.closePath();
-      c.fillStyle = this.strandGradient(c, first, color, pal.additive ? 0.09 : 0.06);
-      c.fill();
-    }
-
-    // нити
+    // пучки волокон
     for (const s of this.strands) {
-      if (s.ribbon.reveal <= 0) continue;
-      s.color = mixColor(pal.a, pal.b, clamp(s.mix, 0, 1));
+      const rb = s.ribbon;
+      if (rb.reveal <= 0) continue;
+      this.computeStrand(s);
+      const color = mixColor(pal.a, pal.b, s.mix);
       c.beginPath();
       c.moveTo(s.pts[0], s.pts[1]);
       for (let p = 1; p < n; p++) c.lineTo(s.pts[p * 2], s.pts[p * 2 + 1]);
       c.lineWidth = s.width;
-      c.strokeStyle = this.strandGradient(c, s, s.color, base * s.alpha);
+      c.strokeStyle = this.gradientFor(c, rb.side, rb.xEnd, color, base * s.alpha, rb.reveal, s.tEnd);
       c.stroke();
     }
 
-    // свечение: уменьшенная размытая копия слоя
+    // свободные завитки
+    for (const l of this.loose) {
+      const rv = this.veilReveal(l.delay);
+      if (rv <= 0) continue;
+      const a = l.alpha * base * clamp(rv / 1.3, 0, 1);
+      const color = mixColor(pal.a, pal.b, l.mix);
+      const len = l.len * W;
+      let x = l.x0 * W, y = l.y0 * H, ang = l.angle + 0.3 * Math.sin(this.time * 0.3 + l.phase);
+      c.beginPath();
+      c.moveTo(x, y);
+      const steps = 30;
+      for (let i = 1; i <= steps; i++) {
+        const t = i / steps;
+        ang += (l.curl * (t * t) * 0.9) / steps + 0.04 * Math.sin(t * 6 + this.time * 0.5 + l.phase);
+        x += (Math.cos(ang) * len) / steps;
+        y += (Math.sin(ang) * len) / steps;
+        c.lineTo(x, y);
+      }
+      c.lineWidth = 0.6;
+      c.strokeStyle = rgba(color, a);
+      c.stroke();
+    }
+
+    // свечение
     const b = this.bctx;
     const bw = this.bloomCanvas.width, bh = this.bloomCanvas.height;
     b.globalCompositeOperation = 'source-over';
@@ -552,19 +660,52 @@ export class VeilBackground {
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalCompositeOperation = pal.additive ? 'lighter' : 'source-over';
-    ctx.globalAlpha = opts.bloom * (pal.additive ? 1 : 0.55);
+    ctx.globalAlpha = opts.bloom * (pal.additive ? 0.9 : 0.45);
     ctx.drawImage(this.bloomCanvas, 0, 0, this.canvas.width, this.canvas.height);
-    if (pal.additive) ctx.drawImage(this.bloomCanvas, 0, 0, this.canvas.width, this.canvas.height);
     ctx.globalAlpha = 1;
     ctx.drawImage(this.layer, 0, 0);
     ctx.restore();
   }
 
-  drawGlints(pal, dt) {
-    const { ctx, opts } = this;
-    const n = opts.points;
-    ctx.globalCompositeOperation = pal.additive ? 'lighter' : 'source-over';
+  drawDot(x, y, r, color, a, bead = false) {
+    const { ctx } = this;
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r * 5);
+    g.addColorStop(0, rgba(color, a));
+    g.addColorStop(0.12, rgba(color, a * 0.75));
+    g.addColorStop(0.35, rgba(color, a * 0.15));
+    g.addColorStop(1, rgba(color, 0));
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(x, y, r * 5, 0, TAU);
+    ctx.fill();
+    if (bead) {
+      // стеклянная капля: кольцо + блик
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = rgba(color, a * 0.6);
+      ctx.beginPath();
+      ctx.arc(x, y, r * 2.2, 0, TAU);
+      ctx.stroke();
+      ctx.fillStyle = rgba(color, a * 0.9);
+      ctx.beginPath();
+      ctx.arc(x - r * 0.8, y - r * 0.8, r * 0.6, 0, TAU);
+      ctx.fill();
+    }
+  }
 
+  drawGlints(pal, dt) {
+    const { opts } = this;
+    const n = opts.points;
+    this.ctx.globalCompositeOperation = pal.additive ? 'lighter' : 'source-over';
+    const glintB = mixColor(pal.glint, pal.b, 0.5);
+
+    // огоньки на кончиках волокон (как у оптоволокна)
+    for (const s of this.strands) {
+      if (!s.tip || s.ribbon.reveal < 1) continue;
+      const a = clamp((s.ribbon.reveal - 1) / 0.3, 0, 1) * (0.5 + 0.5 * Math.sin(this.time * 2 + s.phase)) * s.alpha;
+      this.drawDot(s.pts[(n - 1) * 2], s.pts[(n - 1) * 2 + 1], 0.9, pal.glint, a * pal.intensity);
+    }
+
+    // искры, бегущие по волокнам
     for (const g of this.glints) {
       g.t += g.speed * dt * opts.speed;
       if (g.t > 0.96) this.spawnGlint(g);
@@ -577,24 +718,13 @@ export class VeilBackground {
       const x = lerp(s.pts[i * 2], s.pts[i * 2 + 2], fr);
       const y = lerp(s.pts[i * 2 + 1], s.pts[i * 2 + 3], fr);
       const life = Math.pow(Math.sin(Math.PI * clamp(g.t / 0.96, 0, 1)), 0.6);
-      const tw = 0.6 + 0.4 * Math.sin(this.time * 3.2 + g.phase);
-      const a = life * tw * pal.intensity * fadeIn;
-      const r = g.size * 5;
-
-      const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
-      grad.addColorStop(0, rgba(pal.glint, a));
-      grad.addColorStop(0.12, rgba(pal.glint, a * 0.7));
-      grad.addColorStop(0.35, rgba(pal.glint, a * 0.15));
-      grad.addColorStop(1, rgba(pal.glint, 0));
-      ctx.fillStyle = grad;
-      ctx.beginPath();
-      ctx.arc(x, y, r, 0, TAU);
-      ctx.fill();
+      const tw = 0.55 + 0.45 * Math.sin(this.time * 3.2 + g.phase);
+      this.drawDot(x, y, g.size, g.bead ? glintB : pal.glint, life * tw * pal.intensity * fadeIn, g.bead);
     }
-    ctx.globalCompositeOperation = 'source-over';
+    this.ctx.globalCompositeOperation = 'source-over';
   }
 
-  /* ---------- объекты на полу ---------- */
+  /* ---------- объекты ---------- */
 
   drawShadows(pal, p) {
     const { ctx } = this;
@@ -604,9 +734,9 @@ export class VeilBackground {
       if (!q) continue;
       const a = clamp((p - q[3] - 0.05) / 0.2, 0, 1);
       if (a <= 0) continue;
-      const w = o.el.offsetWidth * ((o.height * this.cam.f) / q[2] / o.el.offsetHeight);
-      const rx = w * 0.6;
-      const ry = rx * (this.opts.camHeight / q[2]) * 0.9;
+      const s = (o.height * this.cam.F) / q[2] / o.el.offsetHeight;
+      const rx = o.el.offsetWidth * s * 0.6;
+      const ry = rx * 0.35;
       ctx.save();
       ctx.translate(q[0], q[1]);
       ctx.scale(1, ry / rx);
@@ -630,7 +760,7 @@ export class VeilBackground {
         continue;
       }
       const w = el.offsetWidth, h = el.offsetHeight;
-      const s = (o.height * this.cam.f) / q[2] / h;
+      const s = (o.height * this.cam.F) / q[2] / h;
       el.style.transform = `translate(${q[0] - (w * s) / 2}px, ${q[1] - h * s}px) scale(${s})`;
       el.style.zIndex = String(1000 - Math.round(q[2] * 10));
       el.style.opacity = clamp((p - q[3] - 0.05) / 0.2, 0, 1).toFixed(3);
